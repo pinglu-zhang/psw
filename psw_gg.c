@@ -42,6 +42,28 @@ typedef struct { float h, e; } eh_t;
  *   qp[b * qlen + j] = sum_a Q_j[a] * mat[a*m+b]
  *   S(i,j) = sum_b qp[b * qlen + j] * T_i[b]
  */
+static inline float psw_score_from_qp(const float *qp, int qlen, int j,
+									  const psw_prof_t *target, int i, int8_t m)
+{
+	const uint32_t *tcol = target->prof + (size_t)i * target->dim;
+
+	float sum = 0.0f;
+	float s = 0.0f;
+	int b;
+
+	for (b = 0; b < m; ++b) {
+		sum += (float)tcol[b];
+		s += qp[(size_t)b * qlen + j] * (float)tcol[b];
+	}
+	if (sum == 0.0f)
+		return 0.0f;
+	return s / sum;
+}
+
+/*
+ * 从预计算的 qp 与 target 第 i 列计算 profile-profile 列打分
+ * target 列也进行 frequency 归一化
+ */
 static inline float *psw_gen_qp(void *km, int qlen, const psw_prof_t *query, int8_t m, const int8_t *mat)
 {
 	int a, b, j;
@@ -49,40 +71,20 @@ static inline float *psw_gen_qp(void *km, int qlen, const psw_prof_t *query, int
 	qp = (float*)kmalloc(km, (size_t)m * qlen * sizeof(float));
 	if (qp == 0) return 0;
 	for (j = 0; j < qlen; ++j) {
-
 		const uint32_t *qcol = query->prof + (size_t)j * query->dim;
-		/* 计算列总和 */
 		float sum = 0.0f;
 		for (a = 0; a < m; ++a)
 			sum += (float)qcol[a];
 		if (sum == 0.0f) sum = 1.0f;
-
+		/* 先计算未归一化结果 */
 		for (b = 0; b < m; ++b) {
 			float s = 0.0f;
-			for (a = 0; a < m; ++a) {
-				float freq = (float)qcol[a] / sum;
-				s += freq * (float)mat[a * m + b];
-			}
-			qp[(size_t)b * qlen + j] = s;
+			for (a = 0; a < m; ++a)
+				s += (float)qcol[a] * (float)mat[a * m + b];
+			qp[(size_t)b * qlen + j] = s / sum;
 		}
 	}
 	return qp;
-}
-
-/*
- * 从预计算的 qp 与 target 第 i 列计算 profile-profile 列打分
- */
-static inline float psw_score_from_qp(const float *qp, int qlen, int j,
-                                      const psw_prof_t *target, int i, int8_t m)
-{
-	const uint32_t *tcol = target->prof + (size_t)i * target->dim;
-	float s = 0.0f;
-	int b;
-
-	for (b = 0; b < m; ++b)
-		s += qp[(size_t)b * qlen + j] * (float)tcol[b];
-
-	return s;
 }
 
 float psw_gg_pp(void *km, int qlen, const psw_prof_t *query, int tlen, const psw_prof_t *target,
