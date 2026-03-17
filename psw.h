@@ -30,11 +30,12 @@ extern "C" {
         uint32_t *cigar;
     } psw_extz_t;
 
-    typedef struct {
-        int len;
-        int dim;
-        const int32_t *prof;   // dim * len
-    } psw_prof_t;
+	typedef struct {
+		int len;
+		int dim;
+		int depth;              // profile总序列数
+		const uint32_t *prof;
+	} psw_prof_t;
 
 
     /**
