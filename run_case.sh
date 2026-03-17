@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_tests.sh — Build psw then run all test cases under test/case/
+# run_case.sh — Build psw then run all test cases under test/case/
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,7 +15,7 @@ echo "================================================================"
 echo "  Building psw"
 echo "================================================================"
 cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_STANDARD=11 -Wno-dev
-cmake --build "$BUILD_DIR" --parallel "$(nproc 2>/dev/null || echo 4)"
+cmake --build "$BUILD_DIR" --config Release --parallel "$(nproc 2>/dev/null || echo 4)"
 echo "Binary: $PSW"
 echo ""
 
@@ -70,4 +70,3 @@ done
 echo "================================================================"
 echo "  All cases finished"
 echo "================================================================"
-
