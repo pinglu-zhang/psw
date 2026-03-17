@@ -28,12 +28,9 @@ typedef struct {
 	uint32_t max : 31, zdropped : 1;
 	int max_q, max_t;
 	int score;
-
-	/* 这些字段供 reset/zdrop helper 使用，和 ksw2 风格保持一致 */
 	int mqe, mte;
 	int mqe_t, mte_q;
 	int reach_end;
-
 	int m_cigar, n_cigar;
 	uint32_t *cigar;
 } psw_extz_t;
@@ -91,6 +88,12 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
                 int8_t m, const int8_t *mat,
                 int8_t gapo, int8_t gape, int w,
                 int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
+float psw_gg_ps(void *km, int qlen, const uint8_t *query,
+				int tlen, const psw_prof_t *target,
+				int8_t m, const int8_t *mat,
+				int8_t gapo, int8_t gape, int w,
+				int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
 
 #ifdef __cplusplus
 }

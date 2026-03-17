@@ -7,6 +7,14 @@
 #define DEMO_DIM 5
 #define ALIGN_BLOCK 80
 
+static const int8_t g_mat[DEMO_DIM * DEMO_DIM] = {
+     2, -2, -2, -2,  0,
+    -2,  2, -2, -2,  0,
+    -2, -2,  2, -2,  0,
+    -2, -2, -2,  2,  0,
+     0,  0,  0,  0,  0
+};
+
 static int base_to_idx(char c)
 {
     switch (c) {
@@ -131,6 +139,54 @@ static void print_alignment(const char *query, const char *target, const uint32_
     free(at);
 }
 
+static void run_case_ps(const char *name,
+                        const char *query_str,
+                        const char *target_str,
+                        int depth, int minor_pct, int gap_pct)
+{
+    int i;
+    int qlen = (int)strlen(query_str);
+    int tlen = (int)strlen(target_str);
+
+    uint8_t  *query_idx  = (uint8_t*)malloc((size_t)qlen);
+    uint32_t *target_prof = (uint32_t*)calloc((size_t)tlen * DEMO_DIM, sizeof(uint32_t));
+    psw_prof_t target = { tlen, DEMO_DIM, depth, target_prof };
+    int m_cigar = 0, n_cigar = 0;
+    uint32_t *cigar = 0;
+    float score;
+
+    if (!query_idx || !target_prof) {
+        printf("allocation failed\n");
+        free(query_idx);
+        free(target_prof);
+        return;
+    }
+
+    for (i = 0; i < qlen; ++i)
+        query_idx[i] = (uint8_t)base_to_idx(query_str[i]);
+
+    sequence_to_profile(target_str, tlen, target_prof, depth, minor_pct, gap_pct);
+
+    score = psw_gg_ps(0, qlen, query_idx,
+                      target.len, &target,
+                      DEMO_DIM, g_mat, 4, 2, -1,
+                      &m_cigar, &n_cigar, &cigar);
+
+    printf("=== [ps] %s ===\n", name);
+    printf("query (%d):  %s  [sequence]\n", qlen, query_str);
+    printf("target(%d):  %s  [profile: depth=%d minor=%d%% gap=%d%%]\n",
+           tlen, target_str, depth, minor_pct, gap_pct);
+    printf("score: %.2f\n", score);
+    printf("cigar: ");
+    if (cigar && n_cigar > 0) print_cigar(cigar, n_cigar);
+    else printf("<empty>\n");
+    if (cigar && n_cigar > 0) print_alignment(query_str, target_str, cigar, n_cigar);
+
+    kfree(0, cigar);
+    free(query_idx);
+    free(target_prof);
+}
+
 static void run_case(const char *name, const char *query_seq, const char *target_seq,
                      int depth, int minor_pct, int gap_pct)
 {
@@ -183,29 +239,65 @@ static void run_case(const char *name, const char *query_seq, const char *target
 
 int main(void)
 {
-    run_case("Case 1: exact match with N",
+    /* ---- profile-profile ---- */
+    run_case("pp-1: exact match with N",
              "ACGTTGACCTGAACTGACGNTACGATGCTA",
              "ACGTTGACCTGAACTGACGNTACGATGCTA",
              100, 20, 15);
 
-    run_case("Case 2: SNP + indel + N",
+    run_case("pp-2: SNP + indel + N",
              "ACGTTGACCTGAACTGACGNTACGATGCTA",
              "ACGTCGACCTGAATGACNCTACGATGCTA",
              100, 20, 15);
 
-    run_case("Case 3: gap-dominant profile",
+    run_case("pp-3: gap-dominant profile",
              "NNNNACGTNNNNACGTNNNN",
              "NNNNACGNNNNNACGTNNNN",
              100, 10, 85);
 
-    run_case("Case 4: high ambiguity (N-rich)",
+    run_case("pp-4: high ambiguity (N-rich)",
              "ACNNNTGACNNNTTGANNNAC",
              "ACNNTTGACNNNCTGANNNAC",
              120, 35, 30);
 
-    run_case("Case 5: severe indel stress",
+    run_case("pp-5: severe indel stress",
              "ACGTACGTACGTACGTACGTACGT",
              "ACGTACGTTTACGTACGT",
              90, 15, 40);
+
+    /* ---- sequence-profile ---- */
+
+    /* ps-1: 完全一致，profile 无噪声 => 期望得到最高分，全M cigar */
+    run_case_ps("ps-1: seq exact match to clean profile",
+                "ACGTTGACCTGAACTGACGT",
+                "ACGTTGACCTGAACTGACGT",
+                100, 0, 0);
+
+    /* ps-2: 2 个 SNP，profile 轻度 minor noise */
+    run_case_ps("ps-2: seq with 2 SNPs vs profile",
+                "ACGTTGACCTGAACTGACGT",
+                "ACGTTGCCCTGAACTAACGT",
+                100, 5, 0);
+
+    /* ps-3: query 比 profile 短，产生 deletion */
+    run_case_ps("ps-3: seq shorter than profile (deletion)",
+                "ACGTTGACCTGACGT",
+                "ACGTTGACCTGAACTGACGT",
+                100, 5, 10);
+
+    /* ps-4: query 比 profile 长，产生 insertion */
+    run_case_ps("ps-4: seq longer than profile (insertion)",
+                "ACGTTGACCTGAACTTTGACGT",
+                "ACGTTGACCTGAACGT",
+                100, 5, 10);
+
+    /* ps-5: profile 含 N，seq 仍能对齐 */
+    run_case_ps("ps-5: seq vs N-rich profile",
+                "ACGTACGTACGT",
+                "ACGNACGNACGT",
+                100, 10, 20);
+
+
+
     return 0;
 }

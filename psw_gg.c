@@ -108,6 +108,33 @@ static inline float psw_score_from_qp(const float *qp, int qlen, int j,
 	return s / depth;
 }
 
+/*
+ * target profile precompute for sequence-profile:
+ *   tp[a * tlen + i] = (sum_b mat[a*m+b] * T_i[b]) / target_depth
+ */
+static inline float *psw_gen_tp(void *km, int tlen, const psw_prof_t *target,
+                                int8_t m, const int8_t *mat)
+{
+	int a, b, i;
+	float depth;
+	float *tp;
+
+	tp = (float*)kmalloc(km, (size_t)m * tlen * sizeof(float));
+	if (tp == 0) return 0;
+
+	depth = target->depth > 0 ? (float)target->depth : 1.0f;
+	for (i = 0; i < tlen; ++i) {
+		const uint32_t *tcol = target->prof + (size_t)i * target->dim;
+		for (a = 0; a < m; ++a) {
+			float s = 0.0f;
+			for (b = 0; b < m; ++b)
+				s += (float)mat[a * m + b] * (float)tcol[b];
+			tp[(size_t)a * tlen + i] = s / depth;
+		}
+	}
+	return tp;
+}
+
 /* -------------------------------------------------------------------------- */
 /* main                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -342,3 +369,164 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 
 	return score;
 }
+
+float psw_gg_ps(void *km, int qlen, const uint8_t *query,
+				int tlen, const psw_prof_t *target,
+				int8_t m, const int8_t *mat,
+				int8_t gapo, int8_t gape, int w,
+				int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
+{
+	eh_t *eh;
+	float *tp;                  /* precomputed target score table */
+	float *tbf;                 /* target per-column base frequency */
+	int32_t i, j, n_col, *off = 0;
+	float score;
+	uint8_t *z = 0;
+	float hq0 = 0.0f;
+
+	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
+	if (target->prof == 0) return PSW_NEG_INF_F;
+	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
+	if (target->len < tlen || target->dim < m) return PSW_NEG_INF_F;
+
+	if (w < 0) w = tlen > qlen ? tlen : qlen;
+	n_col = qlen < 2 * w + 1 ? qlen : 2 * w + 1;
+
+	tp = psw_gen_tp(km, tlen, target, m, mat);
+	if (tp == 0) return PSW_NEG_INF_F;
+
+	tbf = psw_gen_base_freq(km, tlen, target, m);
+	if (tbf == 0) {
+		kfree(km, tp);
+		return PSW_NEG_INF_F;
+	}
+
+	eh = (eh_t*)kcalloc(km, tlen + 1, sizeof(eh_t));
+	if (eh == 0) {
+		kfree(km, tp);
+		kfree(km, tbf);
+		return PSW_NEG_INF_F;
+	}
+
+	if (m_cigar_ && n_cigar_ && cigar_) {
+		*n_cigar_ = 0;
+		z = (uint8_t*)kmalloc(km, (size_t)n_col * tlen);
+		off = (int32_t*)kcalloc(km, tlen, sizeof(int32_t));
+		if (z == 0 || off == 0) {
+			if (z) kfree(km, z);
+			if (off) kfree(km, off);
+			kfree(km, tp);
+			kfree(km, tbf);
+			kfree(km, eh);
+			return PSW_NEG_INF_F;
+		}
+		for (i = 0; i < tlen; ++i) off[i] = i > w ? i - w : 0;
+	}
+
+	/* initialize first column: H(i,0) and F(i,0) */
+	{
+		float hi0 = 0.0f;
+		eh[0].h = 0.0f;
+		eh[0].e = qlen > 0 ? -((float)gapo + (float)gape) : PSW_NEG_INF_F;
+
+		for (i = 1; i <= tlen && i <= w; ++i) {
+			float se = tbf[i - 1];
+			float go = (float)gapo * se;
+			float ge = (float)gape * se;
+
+			if (i == 1) hi0 = -(go + ge);
+			else        hi0 -= ge;
+
+			eh[i].h = hi0;
+			eh[i].e = qlen > 0 ? (hi0 - ((float)gapo + (float)gape)) : PSW_NEG_INF_F;
+		}
+		for (; i <= tlen; ++i) {
+			eh[i].h = PSW_NEG_INF_F;
+			eh[i].e = PSW_NEG_INF_F;
+		}
+	}
+
+	for (j = 0; j < qlen; ++j) {
+		float f, h1;
+		int32_t st, en;
+		int a = (int)query[j];
+
+		if (a < 0 || a >= m) {
+			kfree(km, tp);
+			kfree(km, tbf);
+			kfree(km, eh);
+			if (z) kfree(km, z);
+			if (off) kfree(km, off);
+			return PSW_NEG_INF_F;
+		}
+
+		if (j == 0) hq0 = -((float)gapo + (float)gape);
+		else        hq0 -= (float)gape;
+
+		st = j > w ? j - w : 0;
+		en = j + w + 1 < tlen ? j + w + 1 : tlen;
+
+		h1 = st > 0 ? PSW_NEG_INF_F : hq0;
+		if (st > 0 || tlen <= 0) f = PSW_NEG_INF_F;
+		else {
+			float se0 = tbf[0];
+			f = hq0 - ((float)gapo * se0 + (float)gape * se0);
+		}
+
+		for (i = st; i < en; ++i) {
+			eh_t *p = &eh[i];
+			float go_e = (float)gapo * tbf[i];
+			float ge_e = (float)gape * tbf[i];
+			float go_f = (float)gapo;
+			float ge_f = (float)gape;
+			float h = p->h, e = p->e;
+			float s = tp[(size_t)a * tlen + i];
+			uint8_t d;
+
+			p->h = h1;
+			h += s;
+
+			d = h >= f ? 0 : 1;
+			h = h >= f ? h : f;
+			d = h >= e ? d : 2;
+			h = h >= e ? h : e;
+			h1 = h;
+
+			{
+				float h_open_e = h1 - (go_e + ge_e);
+				f -= ge_e;
+				d |= f > h_open_e ? 0x08 : 0;
+				f = f > h_open_e ? f : h_open_e;
+			}
+
+			{
+				float h_open_f = h1 - (go_f + ge_f);
+				e -= ge_f;
+				d |= e > h_open_f ? 0x10 : 0;
+				e = e > h_open_f ? e : h_open_f;
+				p->e = e;
+			}
+
+			if (z) z[(size_t)i * n_col + (j - off[i])] = d;
+		}
+
+		eh[en].h = h1;
+		eh[en].e = PSW_NEG_INF_F;
+	}
+
+	score = eh[tlen].h;
+
+	kfree(km, tp);
+	kfree(km, tbf);
+	kfree(km, eh);
+
+	if (z && off) {
+		psw_backtrack(km, 0, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1,
+		              m_cigar_, n_cigar_, cigar_);
+		kfree(km, z);
+		kfree(km, off);
+	}
+
+	return score;
+}
+
