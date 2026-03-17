@@ -19,13 +19,17 @@ add_executable(psw
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(psw PRIVATE
-        -Wall
-        -Wextra
-        -Wc++-compat
-        $<$<CONFIG:Release>:-O3 -DNDEBUG>
-        $<$<CONFIG:RelWithDebInfo>:-O3 -g -DNDEBUG>
-        $<$<AND:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<BOOL:${PSW_ENABLE_NATIVE}>>:-march=native>
+            -Wall
+            -Wextra
+            -Wc++-compat
+            $<$<CONFIG:Release>:-O3>
+            $<$<CONFIG:Release>:-DNDEBUG>
+            $<$<CONFIG:RelWithDebInfo>:-O3>
+            $<$<CONFIG:RelWithDebInfo>:-g>
+            $<$<CONFIG:RelWithDebInfo>:-DNDEBUG>
+            $<$<AND:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<BOOL:${PSW_ENABLE_NATIVE}>>:-march=native>
     )
+
 endif()
 
 if(PSW_ENABLE_LTO)
