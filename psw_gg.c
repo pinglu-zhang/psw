@@ -1,4 +1,6 @@
-#include <stdio.h>   // for debugging only
+//
+// Created by 30451 on 2026/3/18.
+//#include <stdio.h>   // for debugging only
 #include <stdint.h>
 #include "psw.h"
 
@@ -73,20 +75,21 @@ static inline float *psw_gen_base_freq(void *km, int len, const psw_prof_t *p, i
 static inline float *psw_gen_qp(void *km, int qlen, const psw_prof_t *query, int8_t m, const int8_t *mat)
 {
 	int a, b, j;
-	float depth;
+	const float inv_depth = 1.0f / (query->depth > 0 ? (float)query->depth : 1.0f);
 	float *qp;
 
-	qp = (float*)kmalloc(km, (size_t)m * qlen * sizeof(float));
+	/* j-major: qp[j * m + b], improves locality when j is inner DP index */
+	qp = (float*)kmalloc(km, (size_t)qlen * m * sizeof(float));
 	if (qp == 0) return 0;
 
-	depth = query->depth > 0 ? (float)query->depth : 1.0f;
 	for (j = 0; j < qlen; ++j) {
 		const uint32_t *qcol = query->prof + (size_t)j * query->dim;
+		float *dst = qp + (size_t)j * m;
 		for (b = 0; b < m; ++b) {
 			float s = 0.0f;
 			for (a = 0; a < m; ++a)
 				s += (float)qcol[a] * (float)mat[a * m + b];
-			qp[(size_t)b * qlen + j] = s / depth;
+			dst[b] = s * inv_depth;
 		}
 	}
 	return qp;
@@ -95,17 +98,18 @@ static inline float *psw_gen_qp(void *km, int qlen, const psw_prof_t *query, int
 /*
  * 从预计算的 qp 与 target 第 i 列计算 profile-profile 列打分
  */
-static inline float psw_score_from_qp(const float *qp, int qlen, int j,
-                                      const psw_prof_t *target, int i, int8_t m)
+static inline float psw_score_from_qp(const float *qp, int j,
+                                      const psw_prof_t *target, int i, int8_t m,
+                                      float inv_tdepth)
 {
 	const uint32_t *tcol = target->prof + (size_t)i * target->dim;
-	float depth = target->depth > 0 ? (float)target->depth : 1.0f;
+	const float *qpj = qp + (size_t)j * m;
 	float s = 0.0f;
 	int b;
 
 	for (b = 0; b < m; ++b)
-		s += qp[(size_t)b * qlen + j] * (float)tcol[b];
-	return s / depth;
+		s += qpj[b] * (float)tcol[b];
+	return s * inv_tdepth;
 }
 
 /*
@@ -116,23 +120,42 @@ static inline float *psw_gen_tp(void *km, int tlen, const psw_prof_t *target,
                                 int8_t m, const int8_t *mat)
 {
 	int a, b, i;
-	float depth;
+	const float inv_depth = 1.0f / (target->depth > 0 ? (float)target->depth : 1.0f);
 	float *tp;
 
 	tp = (float*)kmalloc(km, (size_t)m * tlen * sizeof(float));
 	if (tp == 0) return 0;
 
-	depth = target->depth > 0 ? (float)target->depth : 1.0f;
 	for (i = 0; i < tlen; ++i) {
 		const uint32_t *tcol = target->prof + (size_t)i * target->dim;
 		for (a = 0; a < m; ++a) {
 			float s = 0.0f;
 			for (b = 0; b < m; ++b)
 				s += (float)mat[a * m + b] * (float)tcol[b];
-			tp[(size_t)a * tlen + i] = s / depth;
+			tp[(size_t)a * tlen + i] = s * inv_depth;
 		}
 	}
 	return tp;
+}
+
+/*
+ * Precompute target profile for pp scoring:
+ *   tf[i * m + b] = target_col_i[b] / target_depth
+ */
+static inline float *psw_gen_tf(void *km, int tlen, const psw_prof_t *target, int8_t m)
+{
+	int i, b;
+	const float inv_depth = 1.0f / (target->depth > 0 ? (float)target->depth : 1.0f);
+	float *tf = (float*)kmalloc(km, (size_t)tlen * m * sizeof(float));
+	if (tf == 0) return 0;
+
+	for (i = 0; i < tlen; ++i) {
+		const uint32_t *tcol = target->prof + (size_t)i * target->dim;
+		float *dst = tf + (size_t)i * m;
+		for (b = 0; b < m; ++b)
+			dst[b] = (float)tcol[b] * inv_depth;
+	}
+	return tf;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -147,10 +170,12 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 {
 	eh_t *eh;
 	float *qp;                  /* query profile */
+	float *tf;                  /* target profile as contiguous float rows */
 	float *qbf, *tbf;           /* per-column base frequency */
 	int32_t i, j, n_col, *off = 0;
 	float score;
 	uint8_t *z = 0;             /* backtrack matrix; same encoding as ksw2 */
+	const float fgapo = (float)gapo, fgape = (float)gape;
 
 	/* rolling boundary H(i+1,0) */
 	float ht0;
@@ -169,15 +194,23 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 	qp = psw_gen_qp(km, qlen, query, m, mat);
 	if (qp == 0) return PSW_NEG_INF_F;
 
+	tf = psw_gen_tf(km, tlen, target, m);
+	if (tf == 0) {
+		kfree(km, qp);
+		return PSW_NEG_INF_F;
+	}
+
 	qbf = psw_gen_base_freq(km, qlen, query, m);
 	if (qbf == 0) {
 		kfree(km, qp);
+		kfree(km, tf);
 		return PSW_NEG_INF_F;
 	}
 
 	tbf = psw_gen_base_freq(km, tlen, target, m);
 	if (tbf == 0) {
 		kfree(km, qp);
+		kfree(km, tf);
 		kfree(km, qbf);
 		return PSW_NEG_INF_F;
 	}
@@ -185,6 +218,7 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 	eh = (eh_t*)kcalloc(km, qlen + 1, sizeof(eh_t));
 	if (eh == 0) {
 		kfree(km, qp);
+		kfree(km, tf);
 		kfree(km, qbf);
 		kfree(km, tbf);
 		return PSW_NEG_INF_F;
@@ -198,6 +232,7 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 			if (z) kfree(km, z);
 			if (off) kfree(km, off);
 			kfree(km, qp);
+			kfree(km, tf);
 			kfree(km, qbf);
 			kfree(km, tbf);
 			kfree(km, eh);
@@ -212,8 +247,8 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 
 		if (tlen > 0) {
 			float st0 = tbf[0];
-			go_t0 = (float)gapo * st0;
-			ge_t0 = (float)gape * st0;
+			go_t0 = fgapo * st0;
+			ge_t0 = fgape * st0;
 		}
 
 		eh[0].h = 0.0f;
@@ -221,8 +256,8 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 
 		for (j = 1; j <= qlen && j <= w; ++j) {
 			float sq = qbf[j - 1];
-			float go = (float)gapo * sq;
-			float ge = (float)gape * sq;
+			float go = fgapo * sq;
+			float ge = fgape * sq;
 
 			if (j == 1) hqj = -(go + ge);
 			else        hqj -= ge;
@@ -242,13 +277,14 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 	/* DP loop */
 	for (i = 0; i < tlen; ++i) { /* target in the outer loop */
 		float f, h1, go_e, ge_e;
+		const float *tfi = tf + (size_t)i * m;
 		int32_t st, en;
 
 		/* target-side gap penalties for this row */
 		{
 			float se = tbf[i];
-			go_e = (float)gapo * se;
-			ge_e = (float)gape * se;
+			go_e = fgapo * se;
+			ge_e = fgape * se;
 		}
 
 		/* rolling boundary H(i+1,0) */
@@ -264,9 +300,7 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 			f = PSW_NEG_INF_F;
 		} else {
 			float sq0 = qbf[0];
-			float go_q0 = (float)gapo * sq0;
-			float ge_q0 = (float)gape * sq0;
-			f = ht0 - (go_q0 + ge_q0);
+			f = ht0 - (fgapo * sq0 + fgape * sq0);
 		}
 
 		if (m_cigar_ && n_cigar_ && cigar_) {
@@ -274,20 +308,17 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 			off[i] = st;
 
 			for (j = st; j < en; ++j) {
-				/*
-				 * loop start:
-				 *   eh[j].h = H(i-1,j-1)
-				 *   eh[j].e = E(i,j)
-				 *   f       = F(i,j)
-				 *   h1      = H(i,j-1)
-				 */
 				eh_t *p = &eh[j];
+				const float *qpj = qp + (size_t)j * m;
 				float sq = qbf[j];
-				float go_f = (float)gapo * sq;
-				float ge_f = (float)gape * sq;
+				float go_f = fgapo * sq;
+				float ge_f = fgape * sq;
 				float h = p->h, e = p->e;
-				float s = psw_score_from_qp(qp, qlen, j, target, i, m);
+				float s = 0.0f;
 				uint8_t d;
+				int b;
+
+				for (b = 0; b < m; ++b) s += qpj[b] * tfi[b];
 
 				p->h = h1;
 				h += s;
@@ -300,7 +331,6 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 
 				h1 = h; /* H(i,j) */
 
-				/* E(i+1,j) = max(H(i,j)-go_e-ge_e, E(i,j)-ge_e) */
 				{
 					float h_open_e = h1 - (go_e + ge_e);
 					e -= ge_e;
@@ -309,7 +339,6 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 					p->e = e;
 				}
 
-				/* F(i,j+1) = max(H(i,j)-go_f-ge_f, F(i,j)-ge_f) */
 				{
 					float h_open_f = h1 - (go_f + ge_f);
 					f -= ge_f;
@@ -322,11 +351,15 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 		} else {
 			for (j = st; j < en; ++j) {
 				eh_t *p = &eh[j];
+				const float *qpj = qp + (size_t)j * m;
 				float sq = qbf[j];
-				float go_f = (float)gapo * sq;
-				float ge_f = (float)gape * sq;
+				float go_f = fgapo * sq;
+				float ge_f = fgape * sq;
 				float h = p->h, e = p->e;
-				float s = psw_score_from_qp(qp, qlen, j, target, i, m);
+				float s = 0.0f;
+				int b;
+
+				for (b = 0; b < m; ++b) s += qpj[b] * tfi[b];
 
 				p->h = h1;
 				h += s;
@@ -356,6 +389,7 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 	score = eh[qlen].h;
 
 	kfree(km, qp);
+	kfree(km, tf);
 	kfree(km, qbf);
 	kfree(km, tbf);
 	kfree(km, eh);
@@ -383,6 +417,7 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 	float score;
 	uint8_t *z = 0;
 	float hq0 = 0.0f;
+	const float fgapo = (float)gapo, fgape = (float)gape;
 
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
 	if (target->prof == 0) return PSW_NEG_INF_F;
@@ -399,6 +434,16 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 	if (tbf == 0) {
 		kfree(km, tp);
 		return PSW_NEG_INF_F;
+	}
+
+	/* Validate query alphabet once; avoid checks in the DP hot loop. */
+	for (j = 0; j < qlen; ++j) {
+		int a = (int)query[j];
+		if (a < 0 || a >= m) {
+			kfree(km, tp);
+			kfree(km, tbf);
+			return PSW_NEG_INF_F;
+		}
 	}
 
 	eh = (eh_t*)kcalloc(km, tlen + 1, sizeof(eh_t));
@@ -427,18 +472,18 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 	{
 		float hi0 = 0.0f;
 		eh[0].h = 0.0f;
-		eh[0].e = qlen > 0 ? -((float)gapo + (float)gape) : PSW_NEG_INF_F;
+		eh[0].e = qlen > 0 ? -(fgapo + fgape) : PSW_NEG_INF_F;
 
 		for (i = 1; i <= tlen && i <= w; ++i) {
 			float se = tbf[i - 1];
-			float go = (float)gapo * se;
-			float ge = (float)gape * se;
+			float go = fgapo * se;
+			float ge = fgape * se;
 
 			if (i == 1) hi0 = -(go + ge);
 			else        hi0 -= ge;
 
 			eh[i].h = hi0;
-			eh[i].e = qlen > 0 ? (hi0 - ((float)gapo + (float)gape)) : PSW_NEG_INF_F;
+			eh[i].e = qlen > 0 ? (hi0 - (fgapo + fgape)) : PSW_NEG_INF_F;
 		}
 		for (; i <= tlen; ++i) {
 			eh[i].h = PSW_NEG_INF_F;
@@ -450,18 +495,10 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 		float f, h1;
 		int32_t st, en;
 		int a = (int)query[j];
+		const float *tpj = tp + (size_t)a * tlen;
 
-		if (a < 0 || a >= m) {
-			kfree(km, tp);
-			kfree(km, tbf);
-			kfree(km, eh);
-			if (z) kfree(km, z);
-			if (off) kfree(km, off);
-			return PSW_NEG_INF_F;
-		}
-
-		if (j == 0) hq0 = -((float)gapo + (float)gape);
-		else        hq0 -= (float)gape;
+		if (j == 0) hq0 = -(fgapo + fgape);
+		else        hq0 -= fgape;
 
 		st = j > w ? j - w : 0;
 		en = j + w + 1 < tlen ? j + w + 1 : tlen;
@@ -470,17 +507,16 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 		if (st > 0 || tlen <= 0) f = PSW_NEG_INF_F;
 		else {
 			float se0 = tbf[0];
-			f = hq0 - ((float)gapo * se0 + (float)gape * se0);
+			f = hq0 - (fgapo * se0 + fgape * se0);
 		}
 
 		for (i = st; i < en; ++i) {
 			eh_t *p = &eh[i];
-			float go_e = (float)gapo * tbf[i];
-			float ge_e = (float)gape * tbf[i];
-			float go_f = (float)gapo;
-			float ge_f = (float)gape;
+			float se = tbf[i];
+			float go_e = fgapo * se;
+			float ge_e = fgape * se;
 			float h = p->h, e = p->e;
-			float s = tp[(size_t)a * tlen + i];
+			float s = tpj[i];
 			uint8_t d;
 
 			p->h = h1;
@@ -500,8 +536,8 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 			}
 
 			{
-				float h_open_f = h1 - (go_f + ge_f);
-				e -= ge_f;
+				float h_open_f = h1 - (fgapo + fgape);
+				e -= fgape;
 				d |= e > h_open_f ? 0x10 : 0;
 				e = e > h_open_f ? e : h_open_f;
 				p->e = e;
@@ -529,4 +565,3 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 
 	return score;
 }
-

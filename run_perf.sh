@@ -16,7 +16,7 @@ fi
 
 # MODES is space-separated; easy to extend later, e.g. MODES="gg_pp gg_ps new_mode"
 MODES_STR="${MODES:-gg_pp gg_ps}"
-REPEAT="${REPEAT:-5}"
+REPEAT="${REPEAT:-1}"
 BAND="${BAND:--1}"
 
 usage() {
