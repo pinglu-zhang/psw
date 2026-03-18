@@ -15,7 +15,7 @@ if [[ ! -f "$TARGET_FA" && -f "$PROJECT_ROOT/test/MT-human.fa" ]]; then
 fi
 
 # MODES is space-separated; easy to extend later, e.g. MODES="gg_pp gg_ps new_mode"
-MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps}"
+MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps gg3_pp gg3_ps}"
 REPEAT="${REPEAT:-1}"
 BAND="${BAND:--1}"
 

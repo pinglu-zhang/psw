@@ -16,6 +16,7 @@ add_executable(psw
     main.c
     psw_gg.c
     psw_gg2.c
+    psw_gg3.c
 )
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
