@@ -38,7 +38,7 @@ static void print_usage(const char *prog)
 {
     fprintf(stderr, "Usage: %s [options] <target.fasta> <query.fasta>\n", prog);
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -t STR   mode: gg_pp or gg_ps [gg_pp]\n");
+    fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp or gg2_ps [gg_pp]\n");
     fprintf(stderr, "  -A INT   match score [5]\n");
     fprintf(stderr, "  -B INT   mismatch penalty (positive) [4]\n");
     fprintf(stderr, "  -O INT   gap open penalty [6]\n");
@@ -395,8 +395,9 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(opt.mode, "gg_pp") != 0 && strcmp(opt.mode, "gg_ps") != 0 &&
+        strcmp(opt.mode, "gg2_pp") != 0 && strcmp(opt.mode, "gg2_ps") != 0 &&
         strcmp(opt.mode, "pp") != 0 && strcmp(opt.mode, "ps") != 0) {
-        fprintf(stderr, "ERROR: -t must be gg_pp or gg_ps\n");
+        fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp or gg2_ps\n");
         return 1;
     }
 
@@ -414,7 +415,7 @@ int main(int argc, char **argv)
 
     gen_simple_mat(mat, opt.match, opt.mismatch);
 
-    if (strcmp(opt.mode, "gg_pp") == 0 || strcmp(opt.mode, "pp") == 0) {
+    if (strcmp(opt.mode, "gg_pp") == 0 || strcmp(opt.mode, "pp") == 0 || strcmp(opt.mode, "gg2_pp") == 0) {
         uint32_t *target_prof = 0, *query_prof = 0;
         int tlen = 0, qlen = 0;
         int tdepth = 0, qdepth = 0;
@@ -433,11 +434,17 @@ int main(int argc, char **argv)
         target.len = tlen; target.dim = PSW_DIM; target.depth = tdepth; target.prof = target_prof;
         query.len = qlen; query.dim = PSW_DIM; query.depth = qdepth; query.prof = query_prof;
 
-        score = psw_gg_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
-                          opt.gapo, opt.gape, opt.band,
-                          &m_cigar, &n_cigar, &cigar);
+        if (strcmp(opt.mode, "gg2_pp") == 0) {
+            score = psw_gg2_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
+                               opt.gapo, opt.gape, opt.band,
+                               &m_cigar, &n_cigar, &cigar);
+        } else {
+            score = psw_gg_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
+                              opt.gapo, opt.gape, opt.band,
+                              &m_cigar, &n_cigar, &cigar);
+        }
 
-        printf("mode=gg_pp score=%.2f\n", score);
+        printf("mode=%s score=%.2f\n", strcmp(opt.mode, "gg2_pp") == 0 ? "gg2_pp" : "gg_pp", score);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
         printf("query =%s (n_seq=%d, len=%d)\n", opt.query_path, qdepth, qlen);
         printf("cigar: ");
@@ -476,11 +483,17 @@ int main(int argc, char **argv)
 
         target.len = tlen; target.dim = PSW_DIM; target.depth = tdepth; target.prof = target_prof;
 
-        score = psw_gg_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
-                          opt.gapo, opt.gape, opt.band,
-                          &m_cigar, &n_cigar, &cigar);
+        if (strcmp(opt.mode, "gg2_ps") == 0) {
+            score = psw_gg2_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
+                               opt.gapo, opt.gape, opt.band,
+                               &m_cigar, &n_cigar, &cigar);
+        } else {
+            score = psw_gg_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
+                              opt.gapo, opt.gape, opt.band,
+                              &m_cigar, &n_cigar, &cigar);
+        }
 
-        printf("mode=gg_ps score=%.2f\n", score);
+        printf("mode=%s score=%.2f\n", strcmp(opt.mode, "gg2_ps") == 0 ? "gg2_ps" : "gg_ps", score);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
         printf("query =%s (n_seq=1, len=%d)\n", opt.query_path, qlen);
         printf("cigar: ");

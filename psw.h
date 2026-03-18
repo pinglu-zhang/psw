@@ -95,6 +95,18 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 				int8_t gapo, int8_t gape, int w,
 				int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
 
+float psw_gg2_pp(void *km, int qlen, const psw_prof_t *query,
+                 int tlen, const psw_prof_t *target,
+                 int8_t m, const int8_t *mat,
+                 int8_t gapo, int8_t gape, int w,
+                 int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
+float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
+                 int tlen, const psw_prof_t *target,
+                 int8_t m, const int8_t *mat,
+                 int8_t gapo, int8_t gape, int w,
+                 int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
 #ifdef __cplusplus
 }
 #endif
@@ -271,3 +283,4 @@ static inline int psw_apply_zdrop(psw_extz_t *ez, int is_rot, int32_t H,
 }
 
 #endif /* PSW_H_ */
+
