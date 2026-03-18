@@ -181,6 +181,7 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 	float ht0;
 
 	/* argument check */
+	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
 	if (query->prof == 0 || target->prof == 0) return PSW_NEG_INF_F;
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
@@ -419,6 +420,7 @@ float psw_gg_ps(void *km, int qlen, const uint8_t *query,
 	float hq0 = 0.0f;
 	const float fgapo = (float)gapo, fgape = (float)gape;
 
+	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
 	if (target->prof == 0) return PSW_NEG_INF_F;
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;

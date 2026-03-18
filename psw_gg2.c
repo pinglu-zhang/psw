@@ -107,6 +107,12 @@ static inline float psw_gap_only_query(const float *go_q, const float *ge_q, int
 	return s;
 }
 
+static inline float psw_gap_only_query_scalar(float go_q, float ge_q, int qlen)
+{
+	if (qlen <= 0) return 0.0f;
+	return -(go_q + qlen * ge_q);
+}
+
 float psw_gg2_pp(void *km, int qlen, const psw_prof_t *query,
                  int tlen, const psw_prof_t *target,
                  int8_t m, const int8_t *mat,
@@ -122,7 +128,7 @@ float psw_gg2_pp(void *km, int qlen, const psw_prof_t *query,
 	int32_t last_H0_t = 0;
 	uint8_t *z = 0;
 	const float fgapo = (float)gapo, fgape = (float)gape;
-
+	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
 	if (query->prof == 0 || target->prof == 0) return PSW_NEG_INF_F;
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
@@ -353,7 +359,7 @@ float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
 	uint8_t *z = 0;
 	const float fgapo = (float)gapo, fgape = (float)gape;
 	const float go_q = (float)gapo, ge_q = (float)gape;
-
+	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
 	if (target->prof == 0) return PSW_NEG_INF_F;
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
@@ -401,7 +407,7 @@ float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
 	}
 
 	if (qlen == 0 || tlen == 0) {
-		score = qlen == 0 ? psw_gap_only_target(go_t, ge_t, tlen) : psw_gap_only_query(&go_q, &ge_q, qlen);
+		score = qlen == 0 ? psw_gap_only_target(go_t, ge_t, tlen) : psw_gap_only_query_scalar(go_q, ge_q, qlen);
 		if (m_cigar_ && n_cigar_ && cigar_) {
 			*n_cigar_ = 0;
 			if (qlen == 0 && tlen > 0)
@@ -541,4 +547,5 @@ float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
 	kfree(km, tp); kfree(km, tbf);
 	return score;
 }
+
 
