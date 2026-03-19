@@ -125,20 +125,16 @@ static inline int16_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m, 
 {
 	int32_t acc = 0;
 	int b;
-	int64_t mag, rounded;
-	int64_t half;
+	int32_t  rounded;
 
 	if (scale_shift <= 0) return 0;
-	half = (int64_t)1 << (scale_shift - 1);
 	for (b = 0; b < m; ++b)
 		acc += x[b] * y[b];
 
 	/* round to nearest with ties away from zero, then divide by 2^k via shift */
-	mag = acc >= 0 ? (int64_t)acc : -(int64_t)acc;
-	rounded = (mag + half) >> scale_shift;
-	if (acc < 0) rounded = -rounded;
+	rounded = acc >> scale_shift;
 
-	return psw_sat16((int32_t)rounded);
+	return psw_sat16(rounded);
 }
 
 
