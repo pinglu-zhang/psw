@@ -19,24 +19,63 @@ static inline int16_t psw_sat16(int32_t x)
 	return (int16_t)x;
 }
 
-static inline int16_t psw_round_div_i32(int32_t num, int32_t den)
-{
-	if (den <= 0) den = 1;
-	if (num >= 0) return psw_sat16((num + den / 2) / den);
-	return psw_sat16((num - den / 2) / den);
-}
-
 static inline int16_t psw_to_scaled_ratio(int32_t num, int32_t den)
 {
+	int64_t den64, scaled, rounded;
+
 	if (den <= 0) den = 1;
-	if (num >= 0) return psw_sat16((num * PSW_GG3_SCALE + den / 2) / den);
-	return psw_sat16((num * PSW_GG3_SCALE - den / 2) / den);
+	den64 = (int64_t)den;
+
+	/* widen first to avoid int32 overflow in num * scale */
+	scaled = (int64_t)num * (int64_t)PSW_GG3_SCALE;
+
+	/* round to nearest, ties away from zero */
+	if (scaled >= 0) rounded = (scaled + den64 / 2) / den64;
+	else             rounded = (scaled - den64 / 2) / den64;
+
+	if (rounded > INT16_MAX) return INT16_MAX;
+	if (rounded < INT16_MIN) return INT16_MIN;
+	return (int16_t)rounded;
 }
 
-static inline int16_t psw_mul_scaled(int16_t a, int16_t b)
+static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t *dst, int8_t m)
 {
-	int32_t p = (int32_t)a * (int32_t)b;
-	return psw_round_div_i32(p, PSW_GG3_SCALE);
+	int i, a;
+	int32_t depth;
+	uint32_t *prof;
+	if (src == 0 || dst == 0 || src->prof == 0 || src->len < 0 || src->dim <= 0 || m <= 0) return 0;
+	if (src->dim < m) return 0;
+
+	prof = (uint32_t*)kmalloc(km, (size_t)src->len * src->dim * sizeof(uint32_t));
+	if (prof == 0) return 0;
+
+	depth = src->depth > 0 ? (int32_t)src->depth : 1;
+	for (i = 0; i < src->len; ++i) {
+		const uint32_t *in = src->prof + (size_t)i * src->dim;
+		uint32_t *out = prof + (size_t)i * src->dim;
+		for (a = 0; a < src->dim; ++a) {
+			if (a < m) {
+				int16_t v = psw_to_scaled_ratio((int32_t)in[a], depth);
+				if (v < 0) v = 0;
+				if (v > PSW_GG3_SCALE) v = PSW_GG3_SCALE;
+				out[a] = (uint32_t)v;
+			} else out[a] = in[a];
+		}
+	}
+
+	dst->len = src->len;
+	dst->dim = src->dim;
+	dst->depth = PSW_GG3_SCALE;
+	dst->prof = prof;
+	return 1;
+}
+
+static inline void psw_free_norm_prof(void *km, psw_prof_t *p)
+{
+	if (p && p->prof) {
+		kfree(km, (void*)p->prof);
+		p->prof = 0;
+	}
 }
 
 static inline int16_t psw_div_scale_round_i32(int32_t x)
@@ -45,13 +84,13 @@ static inline int16_t psw_div_scale_round_i32(int32_t x)
 	return psw_sat16((x - PSW_GG3_SCALE / 2) / PSW_GG3_SCALE);
 }
 
-static inline int32_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m, int use_m5, int use_m4)
+static inline int32_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m)
 {
 	int32_t raw;
-	if (use_m5) {
+	if (m == 5) {
 		raw = (int32_t)x[0] * y[0] + (int32_t)x[1] * y[1] + (int32_t)x[2] * y[2] +
 		      (int32_t)x[3] * y[3] + (int32_t)x[4] * y[4];
-	} else if (use_m4) {
+	} else if (m == 4) {
 		raw = (int32_t)x[0] * y[0] + (int32_t)x[1] * y[1] + (int32_t)x[2] * y[2] +
 		      (int32_t)x[3] * y[3];
 	} else {
@@ -65,19 +104,17 @@ static inline int32_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m, 
 static inline int16_t *psw_gen_base_freq_i16(void *km, int len, const psw_prof_t *p, int8_t m)
 {
 	int i, a;
-	int32_t depth;
 	int16_t *bf;
 
 	bf = (int16_t*)kmalloc(km, (size_t)len * sizeof(int16_t));
 	if (bf == 0) return 0;
 
-	depth = p->depth > 0 ? (int32_t)p->depth : 1;
 	for (i = 0; i < len; ++i) {
 		const uint32_t *col = p->prof + (size_t)i * p->dim;
 		int32_t sum = 0;
 		for (a = 0; a < m; ++a)
 			sum += (int32_t)col[a];
-		bf[i] = psw_to_scaled_ratio(sum, depth);
+		bf[i] = psw_sat16(sum);
 		if (bf[i] < 0) bf[i] = 0;
 		if (bf[i] > PSW_GG3_SCALE) bf[i] = PSW_GG3_SCALE;
 	}
@@ -87,7 +124,6 @@ static inline int16_t *psw_gen_base_freq_i16(void *km, int len, const psw_prof_t
 static inline int16_t *psw_gen_qp_i16(void *km, int qlen, const psw_prof_t *query, int8_t m, const int8_t *mat)
 {
 	int a, b, j;
-	const int32_t depth = query->depth > 0 ? (int32_t)query->depth : 1;
 	int16_t *qp;
 
 	qp = (int16_t*)kmalloc(km, (size_t)qlen * m * sizeof(int16_t));
@@ -100,7 +136,7 @@ static inline int16_t *psw_gen_qp_i16(void *km, int qlen, const psw_prof_t *quer
 			int32_t s = 0;
 			for (a = 0; a < m; ++a)
 				s += (int32_t)qcol[a] * (int32_t)mat[a * m + b];
-			dst[b] = psw_to_scaled_ratio(s, depth);
+			dst[b] = psw_sat16(s);
 		}
 	}
 	return qp;
@@ -109,7 +145,6 @@ static inline int16_t *psw_gen_qp_i16(void *km, int qlen, const psw_prof_t *quer
 static inline int16_t *psw_gen_tf_i16(void *km, int tlen, const psw_prof_t *target, int8_t m)
 {
 	int i, b;
-	const int32_t depth = target->depth > 0 ? (int32_t)target->depth : 1;
 	int16_t *tf = (int16_t*)kmalloc(km, (size_t)tlen * m * sizeof(int16_t));
 	if (tf == 0) return 0;
 
@@ -117,7 +152,7 @@ static inline int16_t *psw_gen_tf_i16(void *km, int tlen, const psw_prof_t *targ
 		const uint32_t *tcol = target->prof + (size_t)i * target->dim;
 		int16_t *dst = tf + (size_t)i * m;
 		for (b = 0; b < m; ++b)
-			dst[b] = psw_to_scaled_ratio((int32_t)tcol[b], depth);
+			dst[b] = psw_sat16((int32_t)tcol[b]);
 	}
 	return tf;
 }
@@ -126,7 +161,6 @@ static inline int16_t *psw_gen_tp_i16(void *km, int tlen, const psw_prof_t *targ
                                       int8_t m, const int8_t *mat)
 {
 	int a, b, i;
-	const int32_t depth = target->depth > 0 ? (int32_t)target->depth : 1;
 	int16_t *tp;
 
 	tp = (int16_t*)kmalloc(km, (size_t)m * tlen * sizeof(int16_t));
@@ -138,7 +172,7 @@ static inline int16_t *psw_gen_tp_i16(void *km, int tlen, const psw_prof_t *targ
 			int32_t s = 0;
 			for (b = 0; b < m; ++b)
 				s += (int32_t)mat[a * m + b] * (int32_t)tcol[b];
-			tp[(size_t)a * tlen + i] = psw_to_scaled_ratio(s, depth);
+			tp[(size_t)a * tlen + i] = psw_sat16(s);
 		}
 	}
 	return tp;
@@ -179,13 +213,13 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	int16_t *qbf, *tbf;
 	int16_t *go_q, *ge_q, *go_t, *ge_t;
 	int16_t *go_ge_q, *go_ge_t;
+	psw_prof_t query_n = {0, 0, 0, 0}, target_n = {0, 0, 0, 0};
+	const psw_prof_t *q_use, *t_use;
 	int32_t r, t, n_col, *off = 0;
 	int16_t score16 = INT16_MIN;
 	int32_t H0 = 0;
 	int32_t last_H0_t = 0;
 	uint8_t *z = 0;
-	const int use_m5 = (m == 5);
-	const int use_m4 = (m == 4);
 
 	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
@@ -193,25 +227,38 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
 	if (query->len < qlen || target->len < tlen) return PSW_NEG_INF_F;
 	if (query->dim < m || target->dim < m) return PSW_NEG_INF_F;
+	if (!psw_make_norm_prof(km, query, &query_n, m)) return PSW_NEG_INF_F;
+	if (!psw_make_norm_prof(km, target, &target_n, m)) {
+		psw_free_norm_prof(km, &query_n);
+		return PSW_NEG_INF_F;
+	}
+	q_use = &query_n;
+	t_use = &target_n;
 
 	if (w < 0) w = tlen > qlen ? tlen : qlen;
 	n_col = w + 1 < tlen ? w + 1 : tlen;
 
-	qp = psw_gen_qp_i16(km, qlen, query, m, mat);
-	if (qp == 0) return PSW_NEG_INF_F;
-	tf = psw_gen_tf_i16(km, tlen, target, m);
+	qp = psw_gen_qp_i16(km, qlen, q_use, m, mat);
+	if (qp == 0) {
+		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
+		return PSW_NEG_INF_F;
+	}
+	tf = psw_gen_tf_i16(km, tlen, t_use, m);
 	if (tf == 0) {
 		kfree(km, qp);
+		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
-	qbf = psw_gen_base_freq_i16(km, qlen, query, m);
+	qbf = psw_gen_base_freq_i16(km, qlen, q_use, m);
 	if (qbf == 0) {
 		kfree(km, qp); kfree(km, tf);
+		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
-	tbf = psw_gen_base_freq_i16(km, tlen, target, m);
+	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m);
 	if (tbf == 0) {
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf);
+		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
 
@@ -231,6 +278,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		if (go_ge_t) kfree(km, go_ge_t);
 		if (a) kfree(km, a);
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
 
@@ -256,6 +304,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 			kfree(km, go_ge_q); kfree(km, go_ge_t);
 			kfree(km, a);
 			kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+			psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 			return PSW_NEG_INF_F;
 		}
 	}
@@ -277,6 +326,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		kfree(km, go_ge_q); kfree(km, go_ge_t);
 		kfree(km, a);
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return (float)score16 / (float)PSW_GG3_SCALE;
 	}
 
@@ -315,7 +365,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				int32_t j = r - t;
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
-				int32_t s = psw_dot_scaled(qpj, tfi, m, use_m5, use_m4);
+				int32_t s = psw_dot_scaled(qpj, tfi, m);
 				int32_t score0, ax, by;
 				int16_t score0_16, u1, q_open, t_open;
 				int32_t z_after;
@@ -354,7 +404,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				int32_t j = r - t;
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
-				int32_t s = psw_dot_scaled(qpj, tfi, m, use_m5, use_m4);
+				int32_t s = psw_dot_scaled(qpj, tfi, m);
 				int32_t score0, ax, by;
 				int16_t score0_16, u1, q_open, t_open;
 
@@ -408,6 +458,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	kfree(km, go_ge_q); kfree(km, go_ge_t);
 	kfree(km, a);
 	kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+	psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 	return (float)score16 / (float)PSW_GG3_SCALE;
 }
 
@@ -420,6 +471,8 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	uvxy16_t *a;
 	int16_t *tp, *tbf;
 	int16_t *go_t, *ge_t;
+	psw_prof_t target_n = {0, 0, 0, 0};
+	const psw_prof_t *t_use;
 	int32_t r, t, n_col, *off = 0;
 	int16_t score16 = INT16_MIN;
 	int32_t H0 = 0;
@@ -433,20 +486,30 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	if (target->prof == 0) return PSW_NEG_INF_F;
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
 	if (target->len < tlen || target->dim < m) return PSW_NEG_INF_F;
+	if (!psw_make_norm_prof(km, target, &target_n, m)) return PSW_NEG_INF_F;
+	t_use = &target_n;
 
 	for (t = 0; t < qlen; ++t)
-		if ((int)query[t] < 0 || (int)query[t] >= m) return PSW_NEG_INF_F;
+		if ((int)query[t] < 0 || (int)query[t] >= m) {
+			psw_free_norm_prof(km, &target_n);
+			return PSW_NEG_INF_F;
+		}
 
 	if (w < 0) w = tlen > qlen ? tlen : qlen;
 	n_col = w + 1 < tlen ? w + 1 : tlen;
 
-	tp = psw_gen_tp_i16(km, tlen, target, m, mat);
-	if (tp == 0) return PSW_NEG_INF_F;
-	tbf = psw_gen_base_freq_i16(km, tlen, target, m);
-	if (tbf == 0) {
-		kfree(km, tp);
+	tp = psw_gen_tp_i16(km, tlen, t_use, m, mat);
+	if (tp == 0) {
+		psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
+	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m);
+	if (tbf == 0) {
+		kfree(km, tp);
+		psw_free_norm_prof(km, &target_n);
+		return PSW_NEG_INF_F;
+	}
+
 	go_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
 	ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
 	a = (uvxy16_t*)kcalloc(km, tlen + 1, sizeof(uvxy16_t));
@@ -455,6 +518,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		if (ge_t) kfree(km, ge_t);
 		if (a) kfree(km, a);
 		kfree(km, tp); kfree(km, tbf);
+		psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
 	for (t = 0; t < tlen; ++t) {
@@ -471,6 +535,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 			if (off) kfree(km, off);
 			kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
 			kfree(km, tp); kfree(km, tbf);
+			psw_free_norm_prof(km, &target_n);
 			return PSW_NEG_INF_F;
 		}
 	}
@@ -490,6 +555,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		if (off) kfree(km, off);
 		kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
 		kfree(km, tp); kfree(km, tbf);
+		psw_free_norm_prof(km, &target_n);
 		return (float)score16 / (float)PSW_GG3_SCALE;
 	}
 
@@ -614,5 +680,6 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	if (off) kfree(km, off);
 	kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
 	kfree(km, tp); kfree(km, tbf);
+	psw_free_norm_prof(km, &target_n);
 	return (float)score16 / (float)PSW_GG3_SCALE;
 }
