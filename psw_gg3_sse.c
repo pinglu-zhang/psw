@@ -324,16 +324,27 @@ static inline void psw_fill_pp_score_block(int16_t *dst, int tbase, int r, int s
                                            const int16_t *qp, const int16_t *tf,
                                            const int16_t *go_ge_q, const int16_t *go_ge_t)
 {
-	int lane;
-	for (lane = 0; lane < 8; ++lane) {
-		int t = tbase + lane;
-		if (t >= st0 && t <= en0 && t >= 0 && t < tlen) {
-			int j = r - t;
-			const int16_t *qpj = qp + (size_t)j * m;
-			const int16_t *tfi = tf + (size_t)t * m;
-			dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
-		} else dst[lane] = 0;
-	}
+    int lane;
+    (void)qlen;
+    if (tbase >= st0 && tbase + 7 <= en0 && tbase + 7 < tlen) {
+        for (lane = 0; lane < 8; ++lane) {
+            int t = tbase + lane;
+            int j = r - t;
+            const int16_t *qpj = qp + (size_t)j * m;
+            const int16_t *tfi = tf + (size_t)t * m;
+            dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        }
+        return;
+    }
+    for (lane = 0; lane < 8; ++lane) {
+        int t = tbase + lane;
+        if (t >= st0 && t <= en0 && t >= 0 && t < tlen) {
+            int j = r - t;
+            const int16_t *qpj = qp + (size_t)j * m;
+            const int16_t *tfi = tf + (size_t)t * m;
+            dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        } else dst[lane] = 0;
+    }
 }
 
 static inline void psw_fill_ps_score_block(int16_t *dst, int tbase, int r, int st0, int en0,
@@ -341,28 +352,46 @@ static inline void psw_fill_ps_score_block(int16_t *dst, int tbase, int r, int s
                                            const int16_t *tp, int16_t go_q, int16_t ge_q,
                                            const int16_t *go_t, const int16_t *ge_t)
 {
-	int lane;
-	for (lane = 0; lane < 8; ++lane) {
-		int t = tbase + lane;
-		if (t >= st0 && t <= en0 && t >= 0 && t < tlen) {
-			int j = r - t;
-			int aidx = (int)query[j];
-			dst[lane] = (int16_t)(tp[(size_t)aidx * tlen + t] + go_t[t] + ge_t[t] + go_q + ge_q);
-		} else dst[lane] = 0;
-	}
+    int lane;
+    (void)qlen;
+    if (tbase >= st0 && tbase + 7 <= en0 && tbase + 7 < tlen) {
+        for (lane = 0; lane < 8; ++lane) {
+            int t = tbase + lane;
+            int j = r - t;
+            int aidx = (int)query[j];
+            dst[lane] = (int16_t)(tp[(size_t)aidx * tlen + t] + go_t[t] + ge_t[t] + go_q + ge_q);
+        }
+        return;
+    }
+    for (lane = 0; lane < 8; ++lane) {
+        int t = tbase + lane;
+        if (t >= st0 && t <= en0 && t >= 0 && t < tlen) {
+            int j = r - t;
+            int aidx = (int)query[j];
+            dst[lane] = (int16_t)(tp[(size_t)aidx * tlen + t] + go_t[t] + ge_t[t] + go_q + ge_q);
+        } else dst[lane] = 0;
+    }
 }
 
 static inline void psw_fill_rev_qgap_block(int16_t *dst, int tbase, int r, int st0, int en0,
                                            int qlen, const int16_t *go_q)
 {
-	int lane;
-	for (lane = 0; lane < 8; ++lane) {
-		int t = tbase + lane;
-		if (t >= st0 && t <= en0) {
-			int j = r - t;
-			dst[lane] = go_q[j];
-		} else dst[lane] = 0;
-	}
+    int lane;
+    (void)qlen;
+    if (tbase >= st0 && tbase + 7 <= en0) {
+        for (lane = 0; lane < 8; ++lane) {
+            int t = tbase + lane;
+            dst[lane] = go_q[r - t];
+        }
+        return;
+    }
+    for (lane = 0; lane < 8; ++lane) {
+        int t = tbase + lane;
+        if (t >= st0 && t <= en0) {
+            int j = r - t;
+            dst[lane] = go_q[j];
+        } else dst[lane] = 0;
+    }
 }
 
 static inline void psw_sse_core_pp(int r, int st0, int en0, int st, int en,
@@ -384,7 +413,7 @@ static inline void psw_sse_core_pp(int r, int st0, int en0, int st, int en,
 	int16_t score0[8], topen[8];
 
 	for (t = st; t <= en; t += 8) {
-		__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, topen_, d;
+		__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, topen_;
 		psw_fill_pp_score_block(score0, t, r, st0, en0, qlen, tlen, m, scale_shift, qp, tf, go_ge_q, go_ge_t);
 		qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
 		psw_fill_rev_qgap_block(topen, t, r, st0, en0, qlen, go_q);
@@ -405,22 +434,34 @@ static inline void psw_sse_core_pp(int r, int st0, int en0, int st, int en,
 		yt = _mm_load_si128(&sv->y[t >> 3]);
 		b = _mm_add_epi16(yt, ut);
 
-		d = _mm_and_si128(_mm_cmpgt_epi16(a, z), flag1_);
-		z = _mm_max_epi16(z, a);
-		tmp = _mm_cmpgt_epi16(b, z);
-		d = _mm_or_si128(_mm_andnot_si128(tmp, d), _mm_and_si128(tmp, flag2_));
-		z = _mm_max_epi16(z, b);
+		if (zr) {
+			__m128i d;
+			d = _mm_and_si128(_mm_cmpgt_epi16(a, z), flag1_);
+			z = _mm_max_epi16(z, a);
+			tmp = _mm_cmpgt_epi16(b, z);
+			d = _mm_or_si128(_mm_andnot_si128(tmp, d), _mm_and_si128(tmp, flag2_));
+			z = _mm_max_epi16(z, b);
 
-		_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
-		_mm_store_si128(&sv->v[t >> 3], _mm_sub_epi16(z, ut));
+			_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
+			_mm_store_si128(&sv->v[t >> 3], _mm_sub_epi16(z, ut));
 
-		tmp = _mm_add_epi16(_mm_sub_epi16(a, z), qopen_);
-		d = _mm_or_si128(d, _mm_and_si128(flag8_, _mm_cmpgt_epi16(tmp, zero_)));
-		_mm_store_si128(&sv->x[t >> 3], _mm_max_epi16(tmp, zero_));
-		tmp = _mm_add_epi16(_mm_sub_epi16(b, z), topen_);
-		d = _mm_or_si128(d, _mm_and_si128(flag16_, _mm_cmpgt_epi16(tmp, zero_)));
-		_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
-		if (zr) psw_store_flags8_band(zr, t, st0, en0, d);
+			tmp = _mm_add_epi16(_mm_sub_epi16(a, z), qopen_);
+			d = _mm_or_si128(d, _mm_and_si128(flag8_, _mm_cmpgt_epi16(tmp, zero_)));
+			_mm_store_si128(&sv->x[t >> 3], _mm_max_epi16(tmp, zero_));
+			tmp = _mm_add_epi16(_mm_sub_epi16(b, z), topen_);
+			d = _mm_or_si128(d, _mm_and_si128(flag16_, _mm_cmpgt_epi16(tmp, zero_)));
+			_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
+			psw_store_flags8_band(zr, t, st0, en0, d);
+		} else {
+			z = _mm_max_epi16(z, a);
+			z = _mm_max_epi16(z, b);
+			_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
+			_mm_store_si128(&sv->v[t >> 3], _mm_sub_epi16(z, ut));
+			tmp = _mm_add_epi16(_mm_sub_epi16(a, z), qopen_);
+			_mm_store_si128(&sv->x[t >> 3], _mm_max_epi16(tmp, zero_));
+			tmp = _mm_add_epi16(_mm_sub_epi16(b, z), topen_);
+			_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
+		}
 	}
 }
 
@@ -444,11 +485,11 @@ static inline void psw_sse_core_ps(int r, int st0, int en0, int st, int en,
 	int16_t score0[8];
 
 	for (t = st; t <= en; t += 8) {
-		__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, d;
+		__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_;
 		psw_fill_ps_score_block(score0, t, r, st0, en0, qlen, tlen, query, tp, go_q, ge_q, go_t, ge_t);
 		qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
 		z = _mm_loadu_si128((const __m128i*)score0);
-		
+
 		xt1 = _mm_load_si128(&sv->x[t >> 3]);
 		tmp = _mm_srli_si128(xt1, 14);
 		xt1 = _mm_or_si128(_mm_slli_si128(xt1, 2), x1_);
@@ -463,22 +504,34 @@ static inline void psw_sse_core_ps(int r, int st0, int en0, int st, int en,
 		yt = _mm_load_si128(&sv->y[t >> 3]);
 		b = _mm_add_epi16(yt, ut);
 
-		d = _mm_and_si128(_mm_cmpgt_epi16(a, z), flag1_);
-		z = _mm_max_epi16(z, a);
-		tmp = _mm_cmpgt_epi16(b, z);
-		d = _mm_or_si128(_mm_andnot_si128(tmp, d), _mm_and_si128(tmp, flag2_));
-		z = _mm_max_epi16(z, b);
+		if (zr) {
+			__m128i d;
+			d = _mm_and_si128(_mm_cmpgt_epi16(a, z), flag1_);
+			z = _mm_max_epi16(z, a);
+			tmp = _mm_cmpgt_epi16(b, z);
+			d = _mm_or_si128(_mm_andnot_si128(tmp, d), _mm_and_si128(tmp, flag2_));
+			z = _mm_max_epi16(z, b);
 
-		_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
-		_mm_store_si128(&sv->v[t >> 3], _mm_sub_epi16(z, ut));
+			_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
+			_mm_store_si128(&sv->v[t >> 3], _mm_sub_epi16(z, ut));
 
-		tmp = _mm_add_epi16(_mm_sub_epi16(a, z), qopen_);
-		d = _mm_or_si128(d, _mm_and_si128(flag8_, _mm_cmpgt_epi16(tmp, zero_)));
-		_mm_store_si128(&sv->x[t >> 3], _mm_max_epi16(tmp, zero_));
-		tmp = _mm_add_epi16(_mm_sub_epi16(b, z), topen_const_);
-		d = _mm_or_si128(d, _mm_and_si128(flag16_, _mm_cmpgt_epi16(tmp, zero_)));
-		_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
-		if (zr) psw_store_flags8_band(zr, t, st0, en0, d);
+			tmp = _mm_add_epi16(_mm_sub_epi16(a, z), qopen_);
+			d = _mm_or_si128(d, _mm_and_si128(flag8_, _mm_cmpgt_epi16(tmp, zero_)));
+			_mm_store_si128(&sv->x[t >> 3], _mm_max_epi16(tmp, zero_));
+			tmp = _mm_add_epi16(_mm_sub_epi16(b, z), topen_const_);
+			d = _mm_or_si128(d, _mm_and_si128(flag16_, _mm_cmpgt_epi16(tmp, zero_)));
+			_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
+			psw_store_flags8_band(zr, t, st0, en0, d);
+		} else {
+			z = _mm_max_epi16(z, a);
+			z = _mm_max_epi16(z, b);
+			_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
+			_mm_store_si128(&sv->v[t >> 3], _mm_sub_epi16(z, ut));
+			tmp = _mm_add_epi16(_mm_sub_epi16(a, z), qopen_);
+			_mm_store_si128(&sv->x[t >> 3], _mm_max_epi16(tmp, zero_));
+			tmp = _mm_add_epi16(_mm_sub_epi16(b, z), topen_const_);
+			_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
+		}
 	}
 }
 
