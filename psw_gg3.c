@@ -19,15 +19,48 @@ static inline int16_t psw_sat16(int32_t x)
 	return (int16_t)x;
 }
 
-static inline int16_t psw_to_scaled_ratio(int32_t num, int32_t den)
+static inline int16_t psw_pick_safe_scale_pow2(int8_t m, const int8_t *mat, int8_t gapo, int8_t gape)
+{
+	int a, b;
+	int32_t smax = 0;
+	int32_t coeff, max_scale;
+	int32_t pow2 = 1;
+
+	for (a = 0; a < m; ++a)
+		for (b = 0; b < m; ++b)
+			if ((int32_t)mat[a * m + b] > smax)
+				smax = (int32_t)mat[a * m + b];
+
+	coeff = smax + (int32_t)2 * gapo + (int32_t)2 * gape;
+	if (coeff <= 0) coeff = 1;
+	max_scale = INT16_MAX / coeff;
+	while ((pow2 << 1) > 0 && (pow2 << 1) <= max_scale)
+		pow2 <<= 1;
+	if (pow2 < 2) return 0;
+	return (int16_t)pow2;
+}
+
+static inline int8_t psw_scale_to_shift(int16_t scale)
+{
+	int8_t sh = 0;
+	if (scale <= 0) return -1;
+	while ((scale & 1) == 0) {
+		scale >>= 1;
+		++sh;
+	}
+	return scale == 1 ? sh : -1;
+}
+
+static inline int16_t psw_to_scaled_ratio(int32_t num, int32_t den, int16_t scale)
 {
 	int64_t den64, scaled, rounded;
 
 	if (den <= 0) den = 1;
+	if (scale <= 0) scale = 1;
 	den64 = (int64_t)den;
 
 	/* widen first to avoid int32 overflow in num * scale */
-	scaled = (int64_t)num * (int64_t)PSW_GG3_SCALE;
+	scaled = (int64_t)num * (int64_t)scale;
 
 	/* round to nearest, ties away from zero */
 	if (scaled >= 0) rounded = (scaled + den64 / 2) / den64;
@@ -38,12 +71,12 @@ static inline int16_t psw_to_scaled_ratio(int32_t num, int32_t den)
 	return (int16_t)rounded;
 }
 
-static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t *dst, int8_t m)
+static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t *dst, int8_t m, int16_t scale)
 {
 	int i, a;
 	int32_t depth;
 	uint32_t *prof;
-	if (src == 0 || dst == 0 || src->prof == 0 || src->len < 0 || src->dim <= 0 || m <= 0) return 0;
+	if (src == 0 || dst == 0 || src->prof == 0 || src->len < 0 || src->dim <= 0 || m <= 0 || scale <= 0) return 0;
 	if (src->dim < m) return 0;
 
 	prof = (uint32_t*)kmalloc(km, (size_t)src->len * src->dim * sizeof(uint32_t));
@@ -55,9 +88,9 @@ static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t
 		uint32_t *out = prof + (size_t)i * src->dim;
 		for (a = 0; a < src->dim; ++a) {
 			if (a < m) {
-				int16_t v = psw_to_scaled_ratio((int32_t)in[a], depth);
+				int16_t v = psw_to_scaled_ratio((int32_t)in[a], depth, scale);
 				if (v < 0) v = 0;
-				if (v > PSW_GG3_SCALE) v = PSW_GG3_SCALE;
+				if (v > scale) v = scale;
 				out[a] = (uint32_t)v;
 			} else out[a] = in[a];
 		}
@@ -65,7 +98,7 @@ static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t
 
 	dst->len = src->len;
 	dst->dim = src->dim;
-	dst->depth = PSW_GG3_SCALE;
+	dst->depth = scale;
 	dst->prof = prof;
 	return 1;
 }
@@ -79,31 +112,37 @@ static inline void psw_free_norm_prof(void *km, psw_prof_t *p)
 }
 
 
-// static inline int16_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m)
+// static inline int16_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m, int8_t scale_shift)
 // {
 // 	int16_t raw = 0;
 // 	int b;
 // 	for (b = 0; b < m; ++b) raw += x[b] * y[b];
+// 	raw = raw >> scale_shift;
 //
 // 	return raw;
 // }
-static inline int16_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m)
+static inline int16_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m, int8_t scale_shift)
 {
 	int32_t acc = 0;
 	int b;
+	int64_t mag, rounded;
+	int64_t half;
 
+	if (scale_shift <= 0) return 0;
+	half = (int64_t)1 << (scale_shift - 1);
 	for (b = 0; b < m; ++b)
-		acc += (int32_t)x[b] * (int32_t)y[b];
+		acc += x[b] * y[b];
 
-	/* x and y are both scaled; normalize back once with symmetric rounding */
-	if (acc >= 0) acc = (acc + PSW_GG3_SCALE / 2) / PSW_GG3_SCALE;
-	else          acc = (acc - PSW_GG3_SCALE / 2) / PSW_GG3_SCALE;
+	/* round to nearest with ties away from zero, then divide by 2^k via shift */
+	mag = acc >= 0 ? (int64_t)acc : -(int64_t)acc;
+	rounded = (mag + half) >> scale_shift;
+	if (acc < 0) rounded = -rounded;
 
-	return psw_sat16(acc);
+	return psw_sat16((int32_t)rounded);
 }
 
 
-static inline int16_t *psw_gen_base_freq_i16(void *km, int len, const psw_prof_t *p, int8_t m)
+static inline int16_t *psw_gen_base_freq_i16(void *km, int len, const psw_prof_t *p, int8_t m, int16_t scale)
 {
 	int i, a;
 	int16_t *bf;
@@ -118,7 +157,7 @@ static inline int16_t *psw_gen_base_freq_i16(void *km, int len, const psw_prof_t
 			sum += (int32_t)col[a];
 		bf[i] = psw_sat16(sum);
 		if (bf[i] < 0) bf[i] = 0;
-		if (bf[i] > PSW_GG3_SCALE) bf[i] = PSW_GG3_SCALE;
+		if (bf[i] > scale) bf[i] = scale;
 	}
 	return bf;
 }
@@ -222,6 +261,8 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	int32_t H0 = 0;
 	int32_t last_H0_t = 0;
 	uint8_t *z = 0;
+	int16_t scale;
+	int8_t scale_shift;
 
 	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
@@ -229,8 +270,12 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
 	if (query->len < qlen || target->len < tlen) return PSW_NEG_INF_F;
 	if (query->dim < m || target->dim < m) return PSW_NEG_INF_F;
-	if (!psw_make_norm_prof(km, query, &query_n, m)) return PSW_NEG_INF_F;
-	if (!psw_make_norm_prof(km, target, &target_n, m)) {
+	scale = psw_pick_safe_scale_pow2(m, mat, gapo, gape);
+	if (scale < 2) return PSW_NEG_INF_F;
+	scale_shift = psw_scale_to_shift(scale);
+	if (scale_shift <= 0) return PSW_NEG_INF_F;
+	if (!psw_make_norm_prof(km, query, &query_n, m, scale)) return PSW_NEG_INF_F;
+	if (!psw_make_norm_prof(km, target, &target_n, m, scale)) {
 		psw_free_norm_prof(km, &query_n);
 		return PSW_NEG_INF_F;
 	}
@@ -251,13 +296,13 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
-	qbf = psw_gen_base_freq_i16(km, qlen, q_use, m);
+	qbf = psw_gen_base_freq_i16(km, qlen, q_use, m, scale);
 	if (qbf == 0) {
 		kfree(km, qp); kfree(km, tf);
 		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
-	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m);
+	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m, scale);
 	if (tbf == 0) {
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf);
 		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
@@ -329,7 +374,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		kfree(km, a);
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
-		return (float)score16 / (float)PSW_GG3_SCALE;
+		return (float)score16 / (float)scale;
 	}
 
 	for (r = 0; r < qlen + tlen - 1; ++r) {
@@ -367,7 +412,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				int32_t j = r - t;
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
-				int16_t s = psw_dot_scaled(qpj, tfi, m);
+				int16_t s = psw_dot_scaled(qpj, tfi, m, scale_shift);
 				int16_t score0, ax, by, u1, q_open, t_open, z_after;
 				uint8_t d;
 
@@ -403,7 +448,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				int32_t j = r - t;
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
-				int16_t s = psw_dot_scaled(qpj, tfi, m);
+				int16_t s = psw_dot_scaled(qpj, tfi, m, scale_shift);
 				int16_t score0, ax, by, u1, q_open, t_open, z_after;
 
 				q_open = go_t[t];
@@ -457,7 +502,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	kfree(km, a);
 	kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 	psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
-	return (float)score16 / (float)PSW_GG3_SCALE;
+	return (float)score16 / (float)scale;
 }
 
 float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
@@ -476,15 +521,22 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	int32_t H0 = 0;
 	int32_t last_H0_t = 0;
 	uint8_t *z = 0;
-	const int16_t go_q = psw_sat16((int32_t)gapo * PSW_GG3_SCALE);
-	const int16_t ge_q = psw_sat16((int32_t)gape * PSW_GG3_SCALE);
+	int16_t scale;
+	int8_t scale_shift;
+	int16_t go_q, ge_q;
 
 	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
 	if (target->prof == 0) return PSW_NEG_INF_F;
 	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
 	if (target->len < tlen || target->dim < m) return PSW_NEG_INF_F;
-	if (!psw_make_norm_prof(km, target, &target_n, m)) return PSW_NEG_INF_F;
+	scale = psw_pick_safe_scale_pow2(m, mat, gapo, gape);
+	if (scale < 2) return PSW_NEG_INF_F;
+	scale_shift = psw_scale_to_shift(scale);
+	if (scale_shift <= 0) return PSW_NEG_INF_F;
+	go_q = psw_sat16((int32_t)gapo * scale);
+	ge_q = psw_sat16((int32_t)gape * scale);
+	if (!psw_make_norm_prof(km, target, &target_n, m, scale)) return PSW_NEG_INF_F;
 	t_use = &target_n;
 
 	for (t = 0; t < qlen; ++t)
@@ -501,7 +553,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
-	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m);
+	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m, scale);
 	if (tbf == 0) {
 		kfree(km, tp);
 		psw_free_norm_prof(km, &target_n);
@@ -554,7 +606,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
 		kfree(km, tp); kfree(km, tbf);
 		psw_free_norm_prof(km, &target_n);
-		return (float)score16 / (float)PSW_GG3_SCALE;
+		return (float)score16 / (float)scale;
 	}
 
 	for (r = 0; r < qlen + tlen - 1; ++r) {
@@ -677,5 +729,5 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
 	kfree(km, tp); kfree(km, tbf);
 	psw_free_norm_prof(km, &target_n);
-	return (float)score16 / (float)PSW_GG3_SCALE;
+	return (float)score16 / (float)scale;
 }
