@@ -253,7 +253,6 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	psw_prof_t query_n = {0, 0, 0, 0}, target_n = {0, 0, 0, 0};
 	const psw_prof_t *q_use, *t_use;
 	int32_t r, t, n_col, *off = 0;
-	int16_t score16 = INT16_MIN;
 	int32_t H0 = 0;
 	int32_t last_H0_t = 0;
 	uint8_t *z = 0;
@@ -355,7 +354,6 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	if (qlen == 0 || tlen == 0) {
 		int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
 		                       : psw_gap_only_query_i16(go_q, ge_q, qlen);
-		score16 = psw_sat16(s32);
 		if (m_cigar_ && n_cigar_ && cigar_) {
 			*n_cigar_ = 0;
 			if (qlen == 0 && tlen > 0)
@@ -370,7 +368,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		kfree(km, a);
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
-		return (float)score16 / (float)scale;
+		return (float)s32 / (float)scale;
 	}
 
 	for (r = 0; r < qlen + tlen - 1; ++r) {
@@ -484,8 +482,6 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		}
 	}
 
-	score16 = psw_sat16(H0);
-
 	if (z && off) {
 		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1,
 		              m_cigar_, n_cigar_, cigar_);
@@ -498,7 +494,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	kfree(km, a);
 	kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 	psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
-	return (float)score16 / (float)scale;
+	return (float)H0 / (float)scale;
 }
 
 float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
@@ -513,7 +509,6 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	psw_prof_t target_n = {0, 0, 0, 0};
 	const psw_prof_t *t_use;
 	int32_t r, t, n_col, *off = 0;
-	int16_t score16 = INT16_MIN;
 	int32_t H0 = 0;
 	int32_t last_H0_t = 0;
 	uint8_t *z = 0;
@@ -589,7 +584,6 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	if (qlen == 0 || tlen == 0) {
 		int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
 		                       : psw_gap_only_query_scalar_i16(go_q, ge_q, qlen);
-		score16 = psw_sat16(s32);
 		if (m_cigar_ && n_cigar_ && cigar_) {
 			*n_cigar_ = 0;
 			if (qlen == 0 && tlen > 0)
@@ -602,7 +596,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
 		kfree(km, tp); kfree(km, tbf);
 		psw_free_norm_prof(km, &target_n);
-		return (float)score16 / (float)scale;
+		return (float)s32 / (float)scale;
 	}
 
 	for (r = 0; r < qlen + tlen - 1; ++r) {
@@ -713,8 +707,6 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		}
 	}
 
-	score16 = psw_sat16(H0);
-
 	if (z && off) {
 		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1,
 		              m_cigar_, n_cigar_, cigar_);
@@ -725,5 +717,5 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
 	kfree(km, tp); kfree(km, tbf);
 	psw_free_norm_prof(km, &target_n);
-	return (float)score16 / (float)scale;
+	return (float)H0 / (float)scale;
 }
