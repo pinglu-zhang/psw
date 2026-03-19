@@ -78,28 +78,30 @@ static inline void psw_free_norm_prof(void *km, psw_prof_t *p)
 	}
 }
 
-static inline int16_t psw_div_scale_round_i32(int32_t x)
+
+// static inline int16_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m)
+// {
+// 	int16_t raw = 0;
+// 	int b;
+// 	for (b = 0; b < m; ++b) raw += x[b] * y[b];
+//
+// 	return raw;
+// }
+static inline int16_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m)
 {
-	if (x >= 0) return psw_sat16((x + PSW_GG3_SCALE / 2) / PSW_GG3_SCALE);
-	return psw_sat16((x - PSW_GG3_SCALE / 2) / PSW_GG3_SCALE);
+	int32_t acc = 0;
+	int b;
+
+	for (b = 0; b < m; ++b)
+		acc += (int32_t)x[b] * (int32_t)y[b];
+
+	/* x and y are both scaled; normalize back once with symmetric rounding */
+	if (acc >= 0) acc = (acc + PSW_GG3_SCALE / 2) / PSW_GG3_SCALE;
+	else          acc = (acc - PSW_GG3_SCALE / 2) / PSW_GG3_SCALE;
+
+	return psw_sat16(acc);
 }
 
-static inline int32_t psw_dot_scaled(const int16_t *x, const int16_t *y, int m)
-{
-	int32_t raw;
-	if (m == 5) {
-		raw = (int32_t)x[0] * y[0] + (int32_t)x[1] * y[1] + (int32_t)x[2] * y[2] +
-		      (int32_t)x[3] * y[3] + (int32_t)x[4] * y[4];
-	} else if (m == 4) {
-		raw = (int32_t)x[0] * y[0] + (int32_t)x[1] * y[1] + (int32_t)x[2] * y[2] +
-		      (int32_t)x[3] * y[3];
-	} else {
-		int b;
-		raw = 0;
-		for (b = 0; b < m; ++b) raw += (int32_t)x[b] * y[b];
-	}
-	return (int32_t)psw_div_scale_round_i32(raw);
-}
 
 static inline int16_t *psw_gen_base_freq_i16(void *km, int len, const psw_prof_t *p, int8_t m)
 {
@@ -365,35 +367,32 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				int32_t j = r - t;
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
-				int32_t s = psw_dot_scaled(qpj, tfi, m);
-				int32_t score0, ax, by;
-				int16_t score0_16, u1, q_open, t_open;
-				int32_t z_after;
+				int16_t s = psw_dot_scaled(qpj, tfi, m);
+				int16_t score0, ax, by, u1, q_open, t_open, z_after;
 				uint8_t d;
 
 				q_open = go_t[t];
 				t_open = go_q[j];
-				score0 = s + (int32_t)go_ge_t[t] + go_ge_q[j];
-				ax = (int32_t)x1 + v1;
-				by = (int32_t)a[t].y + a[t].u;
+				score0 = s + go_ge_t[t] + go_ge_q[j];
+				ax = x1 + v1;
+				by = a[t].y + a[t].u;
 				d = ax > score0 ? 1 : 0;
 				score0 = ax > score0 ? ax : score0;
 				d = by > score0 ? 2 : d;
 				score0 = by > score0 ? by : score0;
-				score0_16 = (int16_t)score0;
 
 				u1 = a[t].u;
-				a[t].u = (int16_t)((int32_t)score0_16 - v1);
+				a[t].u = score0 - v1;
 				v1 = a[t].v;
-				a[t].v = (int16_t)((int32_t)score0_16 - u1);
+				a[t].v = score0 - u1;
 
-				z_after = (int32_t)score0_16 - q_open;
+				z_after = score0 - q_open;
 				ax -= z_after;
 				x1 = a[t].x;
 				d |= ax > 0 ? 0x08 : 0;
 				a[t].x = ax > 0 ? (int16_t)ax : 0;
 
-				by -= ((int32_t)score0_16 - t_open);
+				by -= score0 - t_open;
 				d |= by > 0 ? 0x10 : 0;
 				a[t].y = by > 0 ? (int16_t)by : 0;
 
@@ -404,29 +403,28 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				int32_t j = r - t;
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
-				int32_t s = psw_dot_scaled(qpj, tfi, m);
-				int32_t score0, ax, by;
-				int16_t score0_16, u1, q_open, t_open;
+				int16_t s = psw_dot_scaled(qpj, tfi, m);
+				int16_t score0, ax, by, u1, q_open, t_open, z_after;
 
 				q_open = go_t[t];
 				t_open = go_q[j];
-				score0 = s + (int32_t)go_ge_t[t] + go_ge_q[j];
-				ax = (int32_t)x1 + v1;
-				by = (int32_t)a[t].y + a[t].u;
+				score0 = s + go_ge_t[t] + go_ge_q[j];
+				ax = x1 + v1;
+				by = a[t].y + a[t].u;
 				score0 = ax > score0 ? ax : score0;
 				score0 = by > score0 ? by : score0;
-				score0_16 = (int16_t)score0;
 
 				u1 = a[t].u;
-				a[t].u = (int16_t)((int32_t)score0_16 - v1);
+				a[t].u = score0 - v1;
 				v1 = a[t].v;
-				a[t].v = (int16_t)((int32_t)score0_16 - u1);
+				a[t].v = score0 - u1;
 
-				ax -= ((int32_t)score0_16 - q_open);
+				z_after = score0 - q_open;
+				ax -= z_after;
 				x1 = a[t].x;
 				a[t].x = ax > 0 ? (int16_t)ax : 0;
 
-				by -= ((int32_t)score0_16 - t_open);
+				by -= score0 - t_open;
 				a[t].y = by > 0 ? (int16_t)by : 0;
 			}
 		}
@@ -593,35 +591,34 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 			for (t = st; t <= en; ++t) {
 				int32_t j = r - t;
 				int aidx = (int)query[j];
-				int32_t s = tp[(size_t)aidx * tlen + t];
-				int32_t score0, ax, by;
-				int16_t score0_16, u1, q_open, t_open;
+				int16_t s = tp[(size_t)aidx * tlen + t];
+				int16_t score0, ax, by, u1, q_open, t_open, z_after;
 				uint8_t d;
 
 				q_open = go_t[t];
 				t_open = go_q;
 				score0 = s + q_open + ge_t[t] + t_open + ge_q;
-				ax = (int32_t)x1 + v1;
-				by = (int32_t)a[t].y + a[t].u;
+				ax = x1 + v1;
+				by = a[t].y + a[t].u;
 				d = ax > score0 ? 1 : 0;
 				score0 = ax > score0 ? ax : score0;
 				d = by > score0 ? 2 : d;
 				score0 = by > score0 ? by : score0;
-				score0_16 = psw_sat16(score0);
 
 				u1 = a[t].u;
-				a[t].u = psw_sat16((int32_t)score0_16 - v1);
+				a[t].u = score0 - v1;
 				v1 = a[t].v;
-				a[t].v = psw_sat16((int32_t)score0_16 - u1);
+				a[t].v = score0 - u1;
 
-				ax -= ((int32_t)score0_16 - q_open);
+				z_after = score0 - q_open;
+				ax -= z_after;
 				x1 = a[t].x;
 				d |= ax > 0 ? 0x08 : 0;
-				a[t].x = ax > 0 ? psw_sat16(ax) : 0;
+				a[t].x = ax > 0 ? (int16_t)ax : 0;
 
-				by -= ((int32_t)score0_16 - t_open);
+				by -= score0 - t_open;
 				d |= by > 0 ? 0x10 : 0;
-				a[t].y = by > 0 ? psw_sat16(by) : 0;
+				a[t].y = by > 0 ? (int16_t)by : 0;
 
 				zr[t - st] = d;
 			}
@@ -629,30 +626,29 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 			for (t = st; t <= en; ++t) {
 				int32_t j = r - t;
 				int aidx = (int)query[j];
-				int32_t s = tp[(size_t)aidx * tlen + t];
-				int32_t score0, ax, by;
-				int16_t score0_16, u1, q_open, t_open;
+				int16_t s = tp[(size_t)aidx * tlen + t];
+				int16_t score0, ax, by, u1, q_open, t_open, z_after;
 
 				q_open = go_t[t];
 				t_open = go_q;
 				score0 = s + q_open + ge_t[t] + t_open + ge_q;
-				ax = (int32_t)x1 + v1;
-				by = (int32_t)a[t].y + a[t].u;
+				ax = x1 + v1;
+				by = a[t].y + a[t].u;
 				score0 = ax > score0 ? ax : score0;
 				score0 = by > score0 ? by : score0;
-				score0_16 = psw_sat16(score0);
 
 				u1 = a[t].u;
-				a[t].u = psw_sat16((int32_t)score0_16 - v1);
+				a[t].u = score0 - v1;
 				v1 = a[t].v;
-				a[t].v = psw_sat16((int32_t)score0_16 - u1);
+				a[t].v = score0 - u1;
 
-				ax -= ((int32_t)score0_16 - q_open);
+				z_after = score0 - q_open;
+				ax -= z_after;
 				x1 = a[t].x;
-				a[t].x = ax > 0 ? psw_sat16(ax) : 0;
+				a[t].x = ax > 0 ? (int16_t)ax : 0;
 
-				by -= ((int32_t)score0_16 - t_open);
-				a[t].y = by > 0 ? psw_sat16(by) : 0;
+				by -= score0 - t_open;
+				a[t].y = by > 0 ? (int16_t)by : 0;
 			}
 		}
 
