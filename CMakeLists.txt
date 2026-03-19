@@ -17,6 +17,7 @@ add_executable(psw
     psw_gg.c
     psw_gg2.c
     psw_gg3.c
+    psw_gg3_sse.c
 )
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -30,6 +31,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
             $<$<CONFIG:RelWithDebInfo>:-g>
             $<$<CONFIG:RelWithDebInfo>:-DNDEBUG>
             $<$<AND:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>,$<BOOL:${PSW_ENABLE_NATIVE}>>:-march=native>
+            $<$<AND:$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},x86>,$<NOT:$<BOOL:${PSW_ENABLE_NATIVE}>>>:-msse2>
     )
 
 endif()

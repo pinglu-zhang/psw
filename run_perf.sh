@@ -15,7 +15,7 @@ if [[ ! -f "$TARGET_FA" && -f "$PROJECT_ROOT/test/MT-human.fa" ]]; then
 fi
 
 # MODES is space-separated; easy to extend later, e.g. MODES="gg_pp gg_ps new_mode"
-MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps gg3_pp gg3_ps}"
+MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps gg3_pp gg3_ps gg3_sse_pp gg3_sse_ps}"
 REPEAT="${REPEAT:-1}"
 BAND="${BAND:--1}"
 
@@ -101,7 +101,7 @@ for mode in $MODES_STR; do
 
     for ((i=1; i<=REPEAT; i++)); do
         cmd=("$PSW_BIN" -t "$mode" -w "$BAND" "$TARGET_FA" "$QUERY_FA")
-        # printf "[run %d/%d] %s\n" "$i" "$REPEAT" "${cmd[*]}"
+        # printf "[run $i/$REPEAT] %s\n" "${cmd[*]}"
 
         read -r elapsed rss_kb < <({ /usr/bin/time -f "%e %M" \
             "${cmd[@]}" >/dev/null; } 2>&1)

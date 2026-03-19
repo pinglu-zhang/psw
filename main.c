@@ -23,7 +23,7 @@ typedef struct {
 } fasta_rec_t;
 
 typedef struct {
-    const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp or gg3_ps */
+    const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp or gg3_sse_ps */
     int8_t match;
     int8_t mismatch;
     int8_t gapo;
@@ -38,7 +38,7 @@ static void print_usage(const char *prog)
 {
     fprintf(stderr, "Usage: %s [options] <target.fasta> <query.fasta>\n", prog);
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp or gg3_ps [gg_pp]\n");
+    fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp or gg3_sse_ps [gg_pp]\n");
     fprintf(stderr, "  -A INT   match score [5]\n");
     fprintf(stderr, "  -B INT   mismatch penalty (positive) [4]\n");
     fprintf(stderr, "  -O INT   gap open penalty [6]\n");
@@ -397,8 +397,9 @@ int main(int argc, char **argv)
     if (strcmp(opt.mode, "gg_pp") != 0 && strcmp(opt.mode, "gg_ps") != 0 &&
         strcmp(opt.mode, "gg2_pp") != 0 && strcmp(opt.mode, "gg2_ps") != 0 &&
         strcmp(opt.mode, "gg3_pp") != 0 && strcmp(opt.mode, "gg3_ps") != 0 &&
+        strcmp(opt.mode, "gg3_sse_pp") != 0 && strcmp(opt.mode, "gg3_sse_ps") != 0 &&
         strcmp(opt.mode, "pp") != 0 && strcmp(opt.mode, "ps") != 0) {
-        fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp or gg3_ps\n");
+        fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp or gg3_sse_ps\n");
         return 1;
     }
 
@@ -417,7 +418,8 @@ int main(int argc, char **argv)
     gen_simple_mat(mat, opt.match, opt.mismatch);
 
     if (strcmp(opt.mode, "gg_pp") == 0 || strcmp(opt.mode, "pp") == 0 ||
-        strcmp(opt.mode, "gg2_pp") == 0 || strcmp(opt.mode, "gg3_pp") == 0) {
+        strcmp(opt.mode, "gg2_pp") == 0 || strcmp(opt.mode, "gg3_pp") == 0 ||
+        strcmp(opt.mode, "gg3_sse_pp") == 0) {
         uint32_t *target_prof = 0, *query_prof = 0;
         int tlen = 0, qlen = 0;
         int tdepth = 0, qdepth = 0;
@@ -444,6 +446,10 @@ int main(int argc, char **argv)
             score = psw_gg3_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
                                opt.gapo, opt.gape, opt.band,
                                &m_cigar, &n_cigar, &cigar);
+        } else if (strcmp(opt.mode, "gg3_sse_pp") == 0) {
+            score = psw_gg3_sse_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
+                                   opt.gapo, opt.gape, opt.band,
+                                   &m_cigar, &n_cigar, &cigar);
         } else {
             score = psw_gg_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
                               opt.gapo, opt.gape, opt.band,
@@ -452,7 +458,8 @@ int main(int argc, char **argv)
 
         printf("mode=%s score=%.2f\n",
                strcmp(opt.mode, "gg2_pp") == 0 ? "gg2_pp" :
-               (strcmp(opt.mode, "gg3_pp") == 0 ? "gg3_pp" : "gg_pp"),
+               (strcmp(opt.mode, "gg3_pp") == 0 ? "gg3_pp" :
+               (strcmp(opt.mode, "gg3_sse_pp") == 0 ? "gg3_sse_pp" : "gg_pp")),
                score);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
         printf("query =%s (n_seq=%d, len=%d)\n", opt.query_path, qdepth, qlen);
@@ -500,6 +507,10 @@ int main(int argc, char **argv)
             score = psw_gg3_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
                                opt.gapo, opt.gape, opt.band,
                                &m_cigar, &n_cigar, &cigar);
+        } else if (strcmp(opt.mode, "gg3_sse_ps") == 0) {
+            score = psw_gg3_sse_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
+                                   opt.gapo, opt.gape, opt.band,
+                                   &m_cigar, &n_cigar, &cigar);
         } else {
             score = psw_gg_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
                               opt.gapo, opt.gape, opt.band,
@@ -508,7 +519,8 @@ int main(int argc, char **argv)
 
         printf("mode=%s score=%.2f\n",
                strcmp(opt.mode, "gg2_ps") == 0 ? "gg2_ps" :
-               (strcmp(opt.mode, "gg3_ps") == 0 ? "gg3_ps" : "gg_ps"),
+               (strcmp(opt.mode, "gg3_ps") == 0 ? "gg3_ps" :
+               (strcmp(opt.mode, "gg3_sse_ps") == 0 ? "gg3_sse_ps" : "gg_ps")),
                score);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
         printf("query =%s (n_seq=1, len=%d)\n", opt.query_path, qlen);

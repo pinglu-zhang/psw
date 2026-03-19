@@ -119,6 +119,18 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
                  int8_t gapo, int8_t gape, int w,
                  int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
 
+float psw_gg3_sse_pp(void *km, int qlen, const psw_prof_t *query,
+                     int tlen, const psw_prof_t *target,
+                     int8_t m, const int8_t *mat,
+                     int8_t gapo, int8_t gape, int w,
+                     int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
+float psw_gg3_sse_ps(void *km, int qlen, const uint8_t *query,
+                     int tlen, const psw_prof_t *target,
+                     int8_t m, const int8_t *mat,
+                     int8_t gapo, int8_t gape, int w,
+                     int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
 #ifdef __cplusplus
 }
 #endif
