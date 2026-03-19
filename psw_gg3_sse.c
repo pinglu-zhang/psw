@@ -297,6 +297,11 @@ static inline void psw_store_flags8_band(uint8_t *dst, int tbase, int st0, int e
 	int16_t tmp[8];
 	int i;
 	_mm_storeu_si128((__m128i*)tmp, d);
+	if (tbase >= st0 && tbase + 7 <= en0) {
+		uint8_t *p = dst + (tbase - st0);
+		for (i = 0; i < 8; ++i) p[i] = (uint8_t)tmp[i];
+		return;
+	}
 	for (i = 0; i < 8; ++i) {
 		int t = tbase + i;
 		if (t >= st0 && t <= en0)
@@ -412,30 +417,29 @@ static inline void psw_sse_core_pp(int r, int st0, int en0, int st, int en,
 	__m128i v1_ = psw_set_low_i16(v1);
 	int16_t score0[8], topen[8];
 
-	for (t = st; t <= en; t += 8) {
-		__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, topen_;
-		psw_fill_pp_score_block(score0, t, r, st0, en0, qlen, tlen, m, scale_shift, qp, tf, go_ge_q, go_ge_t);
-		qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
-		psw_fill_rev_qgap_block(topen, t, r, st0, en0, qlen, go_q);
-		z = _mm_loadu_si128((const __m128i*)score0);
-		topen_ = _mm_loadu_si128((const __m128i*)topen);
+	if (zr) {
+		for (t = st; t <= en; t += 8) {
+			__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, topen_, d;
+			psw_fill_pp_score_block(score0, t, r, st0, en0, qlen, tlen, m, scale_shift, qp, tf, go_ge_q, go_ge_t);
+			qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
+			psw_fill_rev_qgap_block(topen, t, r, st0, en0, qlen, go_q);
+			z = _mm_loadu_si128((const __m128i*)score0);
+			topen_ = _mm_loadu_si128((const __m128i*)topen);
 
-		xt1 = _mm_load_si128(&sv->x[t >> 3]);
-		tmp = _mm_srli_si128(xt1, 14);
-		xt1 = _mm_or_si128(_mm_slli_si128(xt1, 2), x1_);
-		x1_ = tmp;
-		vt1 = _mm_load_si128(&sv->v[t >> 3]);
-		tmp = _mm_srli_si128(vt1, 14);
-		vt1 = _mm_or_si128(_mm_slli_si128(vt1, 2), v1_);
-		v1_ = tmp;
-		a = _mm_add_epi16(xt1, vt1);
+			xt1 = _mm_load_si128(&sv->x[t >> 3]);
+			tmp = _mm_srli_si128(xt1, 14);
+			xt1 = _mm_or_si128(_mm_slli_si128(xt1, 2), x1_);
+			x1_ = tmp;
+			vt1 = _mm_load_si128(&sv->v[t >> 3]);
+			tmp = _mm_srli_si128(vt1, 14);
+			vt1 = _mm_or_si128(_mm_slli_si128(vt1, 2), v1_);
+			v1_ = tmp;
+			a = _mm_add_epi16(xt1, vt1);
 
-		ut = _mm_load_si128(&sv->u[t >> 3]);
-		yt = _mm_load_si128(&sv->y[t >> 3]);
-		b = _mm_add_epi16(yt, ut);
+			ut = _mm_load_si128(&sv->u[t >> 3]);
+			yt = _mm_load_si128(&sv->y[t >> 3]);
+			b = _mm_add_epi16(yt, ut);
 
-		if (zr) {
-			__m128i d;
 			d = _mm_and_si128(_mm_cmpgt_epi16(a, z), flag1_);
 			z = _mm_max_epi16(z, a);
 			tmp = _mm_cmpgt_epi16(b, z);
@@ -452,7 +456,30 @@ static inline void psw_sse_core_pp(int r, int st0, int en0, int st, int en,
 			d = _mm_or_si128(d, _mm_and_si128(flag16_, _mm_cmpgt_epi16(tmp, zero_)));
 			_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
 			psw_store_flags8_band(zr, t, st0, en0, d);
-		} else {
+		}
+	} else {
+		for (t = st; t <= en; t += 8) {
+			__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, topen_;
+			psw_fill_pp_score_block(score0, t, r, st0, en0, qlen, tlen, m, scale_shift, qp, tf, go_ge_q, go_ge_t);
+			qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
+			psw_fill_rev_qgap_block(topen, t, r, st0, en0, qlen, go_q);
+			z = _mm_loadu_si128((const __m128i*)score0);
+			topen_ = _mm_loadu_si128((const __m128i*)topen);
+
+			xt1 = _mm_load_si128(&sv->x[t >> 3]);
+			tmp = _mm_srli_si128(xt1, 14);
+			xt1 = _mm_or_si128(_mm_slli_si128(xt1, 2), x1_);
+			x1_ = tmp;
+			vt1 = _mm_load_si128(&sv->v[t >> 3]);
+			tmp = _mm_srli_si128(vt1, 14);
+			vt1 = _mm_or_si128(_mm_slli_si128(vt1, 2), v1_);
+			v1_ = tmp;
+			a = _mm_add_epi16(xt1, vt1);
+
+			ut = _mm_load_si128(&sv->u[t >> 3]);
+			yt = _mm_load_si128(&sv->y[t >> 3]);
+			b = _mm_add_epi16(yt, ut);
+
 			z = _mm_max_epi16(z, a);
 			z = _mm_max_epi16(z, b);
 			_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
@@ -484,28 +511,27 @@ static inline void psw_sse_core_ps(int r, int st0, int en0, int st, int en,
 	__m128i v1_ = psw_set_low_i16(v1);
 	int16_t score0[8];
 
-	for (t = st; t <= en; t += 8) {
-		__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_;
-		psw_fill_ps_score_block(score0, t, r, st0, en0, qlen, tlen, query, tp, go_q, ge_q, go_t, ge_t);
-		qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
-		z = _mm_loadu_si128((const __m128i*)score0);
+	if (zr) {
+		for (t = st; t <= en; t += 8) {
+			__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, d;
+			psw_fill_ps_score_block(score0, t, r, st0, en0, qlen, tlen, query, tp, go_q, ge_q, go_t, ge_t);
+			qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
+			z = _mm_loadu_si128((const __m128i*)score0);
 
-		xt1 = _mm_load_si128(&sv->x[t >> 3]);
-		tmp = _mm_srli_si128(xt1, 14);
-		xt1 = _mm_or_si128(_mm_slli_si128(xt1, 2), x1_);
-		x1_ = tmp;
-		vt1 = _mm_load_si128(&sv->v[t >> 3]);
-		tmp = _mm_srli_si128(vt1, 14);
-		vt1 = _mm_or_si128(_mm_slli_si128(vt1, 2), v1_);
-		v1_ = tmp;
-		a = _mm_add_epi16(xt1, vt1);
+			xt1 = _mm_load_si128(&sv->x[t >> 3]);
+			tmp = _mm_srli_si128(xt1, 14);
+			xt1 = _mm_or_si128(_mm_slli_si128(xt1, 2), x1_);
+			x1_ = tmp;
+			vt1 = _mm_load_si128(&sv->v[t >> 3]);
+			tmp = _mm_srli_si128(vt1, 14);
+			vt1 = _mm_or_si128(_mm_slli_si128(vt1, 2), v1_);
+			v1_ = tmp;
+			a = _mm_add_epi16(xt1, vt1);
 
-		ut = _mm_load_si128(&sv->u[t >> 3]);
-		yt = _mm_load_si128(&sv->y[t >> 3]);
-		b = _mm_add_epi16(yt, ut);
+			ut = _mm_load_si128(&sv->u[t >> 3]);
+			yt = _mm_load_si128(&sv->y[t >> 3]);
+			b = _mm_add_epi16(yt, ut);
 
-		if (zr) {
-			__m128i d;
 			d = _mm_and_si128(_mm_cmpgt_epi16(a, z), flag1_);
 			z = _mm_max_epi16(z, a);
 			tmp = _mm_cmpgt_epi16(b, z);
@@ -522,7 +548,28 @@ static inline void psw_sse_core_ps(int r, int st0, int en0, int st, int en,
 			d = _mm_or_si128(d, _mm_and_si128(flag16_, _mm_cmpgt_epi16(tmp, zero_)));
 			_mm_store_si128(&sv->y[t >> 3], _mm_max_epi16(tmp, zero_));
 			psw_store_flags8_band(zr, t, st0, en0, d);
-		} else {
+		}
+	} else {
+		for (t = st; t <= en; t += 8) {
+			__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_;
+			psw_fill_ps_score_block(score0, t, r, st0, en0, qlen, tlen, query, tp, go_q, ge_q, go_t, ge_t);
+			qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
+			z = _mm_loadu_si128((const __m128i*)score0);
+
+			xt1 = _mm_load_si128(&sv->x[t >> 3]);
+			tmp = _mm_srli_si128(xt1, 14);
+			xt1 = _mm_or_si128(_mm_slli_si128(xt1, 2), x1_);
+			x1_ = tmp;
+			vt1 = _mm_load_si128(&sv->v[t >> 3]);
+			tmp = _mm_srli_si128(vt1, 14);
+			vt1 = _mm_or_si128(_mm_slli_si128(vt1, 2), v1_);
+			v1_ = tmp;
+			a = _mm_add_epi16(xt1, vt1);
+
+			ut = _mm_load_si128(&sv->u[t >> 3]);
+			yt = _mm_load_si128(&sv->y[t >> 3]);
+			b = _mm_add_epi16(yt, ut);
+
 			z = _mm_max_epi16(z, a);
 			z = _mm_max_epi16(z, b);
 			_mm_store_si128(&sv->u[t >> 3], _mm_sub_epi16(z, vt1));
