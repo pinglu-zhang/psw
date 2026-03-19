@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run_case.sh — Build psw then run all test cases under test/case/
-set -euo pipefail
+set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"

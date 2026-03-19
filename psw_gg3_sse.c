@@ -598,8 +598,9 @@ float psw_gg3_sse_pp(void *km, int qlen, const psw_prof_t *query,
 	uint8_t *z = 0;
 	int16_t scale;
 	int8_t scale_shift;
-	psw_sse_state_t sv;
+	psw_sse_state_t sv = {0};
 	int ok = 0;
+	int failed = 0;
 
 	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
@@ -622,112 +623,108 @@ float psw_gg3_sse_pp(void *km, int qlen, const psw_prof_t *query,
 	if (w < 0) w = tlen > qlen ? tlen : qlen;
 	n_col = w + 1 < tlen ? w + 1 : tlen;
 
-	qp = psw_gen_qp_i16(km, qlen, q_use, m, mat);
-	if (qp == 0) goto fail;
-	tf = psw_gen_tf_i16(km, tlen, t_use, m);
-	if (tf == 0) goto fail;
-	qbf = psw_gen_base_freq_i16(km, qlen, q_use, m, scale);
-	if (qbf == 0) goto fail;
-	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m, scale);
-	if (tbf == 0) goto fail;
+	do {
+		qp = psw_gen_qp_i16(km, qlen, q_use, m, mat);
+		if (qp == 0) { failed = 1; break; }
+		tf = psw_gen_tf_i16(km, tlen, t_use, m);
+		if (tf == 0) { failed = 1; break; }
+		qbf = psw_gen_base_freq_i16(km, qlen, q_use, m, scale);
+		if (qbf == 0) { failed = 1; break; }
+		tbf = psw_gen_base_freq_i16(km, tlen, t_use, m, scale);
+		if (tbf == 0) { failed = 1; break; }
 
-	go_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
-	ge_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
-	go_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	go_ge_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
-	go_ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	if (go_q == 0 || ge_q == 0 || go_t == 0 || ge_t == 0 || go_ge_q == 0 || go_ge_t == 0) goto fail;
-	for (r = 0; r < qlen; ++r) {
-		go_q[r] = psw_sat16((int32_t)gapo * qbf[r]);
-		ge_q[r] = psw_sat16((int32_t)gape * qbf[r]);
-		go_ge_q[r] = (int16_t)(go_q[r] + ge_q[r]);
-	}
-	for (r = 0; r < tlen; ++r) {
-		go_t[r] = psw_sat16((int32_t)gapo * tbf[r]);
-		ge_t[r] = psw_sat16((int32_t)gape * tbf[r]);
-		go_ge_t[r] = (int16_t)(go_t[r] + ge_t[r]);
-	}
-	if (!psw_sse_state_init(km, tlen, &sv)) goto fail;
-	ok = 1;
+		go_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
+		ge_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
+		go_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
+		ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
+		go_ge_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
+		go_ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
+		if (go_q == 0 || ge_q == 0 || go_t == 0 || ge_t == 0 || go_ge_q == 0 || go_ge_t == 0) { failed = 1; break; }
+		for (r = 0; r < qlen; ++r) {
+			go_q[r] = psw_sat16((int32_t)gapo * qbf[r]);
+			ge_q[r] = psw_sat16((int32_t)gape * qbf[r]);
+			go_ge_q[r] = (int16_t)(go_q[r] + ge_q[r]);
+		}
+		for (r = 0; r < tlen; ++r) {
+			go_t[r] = psw_sat16((int32_t)gapo * tbf[r]);
+			ge_t[r] = psw_sat16((int32_t)gape * tbf[r]);
+			go_ge_t[r] = (int16_t)(go_t[r] + ge_t[r]);
+		}
+		if (!psw_sse_state_init(km, tlen, &sv)) { failed = 1; break; }
+		ok = 1;
 
-	if (m_cigar_ && n_cigar_ && cigar_) {
-		*n_cigar_ = 0;
-		z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
-		off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
-		if (z == 0 || off == 0) goto fail;
-	}
-
-	if (qlen == 0 || tlen == 0) {
-		int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
-		                       : psw_gap_only_query_i16(go_q, ge_q, qlen);
-		score32 = s32;
 		if (m_cigar_ && n_cigar_ && cigar_) {
 			*n_cigar_ = 0;
-			if (qlen == 0 && tlen > 0)
-				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_DEL, tlen);
-			else if (tlen == 0 && qlen > 0)
-				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_INS, qlen);
+			z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
+			off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
+			if (z == 0 || off == 0) { failed = 1; break; }
 		}
-		goto done;
-	}
 
-	for (r = 0; r < qlen + tlen - 1; ++r) {
-		int32_t st = 0, en = tlen - 1, st0, en0;
-		int16_t x1, v1;
-		if (st < r - qlen + 1) st = r - qlen + 1;
-		if (en > r) en = r;
-		if (st < (r - w + 1) >> 1) st = (r - w + 1) >> 1;
-		if (en > (r + w) >> 1) en = (r + w) >> 1;
-		if (st > en) continue;
-		st0 = st; en0 = en;
-		st = (st / 8) * 8;
-		en = ((en + 8) / 8) * 8 - 1;
-
-		if (st0 != 0) {
-			if (r > st0 + st0 + w - 1) x1 = v1 = 0;
-			else {
-				x1 = sv.x16[st0 - 1];
-				v1 = sv.v16[st0 - 1];
+		if (qlen == 0 || tlen == 0) {
+			int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
+			                       : psw_gap_only_query_i16(go_q, ge_q, qlen);
+			score32 = s32;
+			if (m_cigar_ && n_cigar_ && cigar_) {
+				*n_cigar_ = 0;
+				if (qlen == 0 && tlen > 0)
+					*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_DEL, tlen);
+				else if (tlen == 0 && qlen > 0)
+					*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_INS, qlen);
 			}
-		} else {
-			x1 = 0;
-			v1 = r ? go_q[r - 1] : 0;
+			break;
 		}
-		if (en0 != r) {
-			if (r < en0 + en0 - w - 1) sv.y16[en0] = sv.u16[en0] = 0;
-		} else {
-			sv.y16[r] = 0;
-			sv.u16[r] = r ? go_t[r - 1] : 0;
-		}
-		if (z) off[r] = st0;
-		psw_sse_core_pp((int)r, (int)st0, (int)en0, (int)st, (int)en, &sv, z ? z + (size_t)r * n_col : 0,
-		                go_t, go_q, qlen, tlen, m, scale_shift, qp, tf, go_ge_q, go_ge_t, x1, v1);
 
-		if (r > 0) {
-			if (last_H0_t >= st0 && last_H0_t <= en0) {
-				int32_t jh = r - last_H0_t;
-				H0 += (int32_t)sv.v16[last_H0_t] - go_ge_q[jh];
+		for (r = 0; r < qlen + tlen - 1; ++r) {
+			int32_t st = 0, en = tlen - 1, st0, en0;
+			int16_t x1, v1;
+			if (st < r - qlen + 1) st = r - qlen + 1;
+			if (en > r) en = r;
+			if (st < (r - w + 1) >> 1) st = (r - w + 1) >> 1;
+			if (en > (r + w) >> 1) en = (r + w) >> 1;
+			if (st > en) continue;
+			st0 = st; en0 = en;
+			st = (st / 8) * 8;
+			en = ((en + 8) / 8) * 8 - 1;
+
+			if (st0 != 0) {
+				if (r > st0 + st0 + w - 1) x1 = v1 = 0;
+				else {
+					x1 = sv.x16[st0 - 1];
+					v1 = sv.v16[st0 - 1];
+				}
 			} else {
-				++last_H0_t;
-				H0 += (int32_t)sv.u16[last_H0_t] - go_ge_t[last_H0_t];
+				x1 = 0;
+				v1 = r ? go_q[r - 1] : 0;
 			}
-		} else {
-			H0 = (int32_t)sv.v16[0] - ((int32_t)go_ge_t[0] + go_ge_q[0]);
-			last_H0_t = 0;
+			if (en0 != r) {
+				if (r < en0 + en0 - w - 1) sv.y16[en0] = sv.u16[en0] = 0;
+			} else {
+				sv.y16[r] = 0;
+				sv.u16[r] = r ? go_t[r - 1] : 0;
+			}
+			if (z) off[r] = st0;
+			psw_sse_core_pp((int)r, (int)st0, (int)en0, (int)st, (int)en, &sv, z ? z + (size_t)r * n_col : 0,
+			                go_t, go_q, qlen, tlen, m, scale_shift, qp, tf, go_ge_q, go_ge_t, x1, v1);
+
+			if (r > 0) {
+				if (last_H0_t >= st0 && last_H0_t <= en0) {
+					int32_t jh = r - last_H0_t;
+					H0 += (int32_t)sv.v16[last_H0_t] - go_ge_q[jh];
+				} else {
+					++last_H0_t;
+					H0 += (int32_t)sv.u16[last_H0_t] - go_ge_t[last_H0_t];
+				}
+			} else {
+				H0 = (int32_t)sv.v16[0] - ((int32_t)go_ge_t[0] + go_ge_q[0]);
+				last_H0_t = 0;
+			}
 		}
-	}
-	score32 = H0;
-	if (z && off)
-		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1, m_cigar_, n_cigar_, cigar_);
+		score32 = H0;
+		if (z && off)
+			psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1, m_cigar_, n_cigar_, cigar_);
+	} while (0);
 
-goto done;
-
-fail:
-	if (!ok) sv.mem = 0;
-	score32 = INT32_MIN;
-
-done:
+	if (failed) score32 = INT32_MIN;
 	if (z) kfree(km, z);
 	if (off) kfree(km, off);
 	if (ok) psw_sse_state_destroy(km, &sv);
@@ -762,8 +759,9 @@ float psw_gg3_sse_ps(void *km, int qlen, const uint8_t *query,
 	uint8_t *z = 0;
 	int16_t scale, go_q, ge_q;
 	int8_t scale_shift;
-	psw_sse_state_t sv;
+	psw_sse_state_t sv = {0};
 	int ok = 0;
+	int failed = 0;
 
 	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
@@ -785,96 +783,92 @@ float psw_gg3_sse_ps(void *km, int qlen, const uint8_t *query,
 	if (w < 0) w = tlen > qlen ? tlen : qlen;
 	n_col = w + 1 < tlen ? w + 1 : tlen;
 
-	tp = psw_gen_tp_i16(km, tlen, t_use, m, mat);
-	if (tp == 0) goto fail;
-	tbf = psw_gen_base_freq_i16(km, tlen, t_use, m, scale);
-	if (tbf == 0) goto fail;
-	go_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	if (go_t == 0 || ge_t == 0) goto fail;
-	for (r = 0; r < tlen; ++r) {
-		go_t[r] = psw_sat16((int32_t)gapo * tbf[r]);
-		ge_t[r] = psw_sat16((int32_t)gape * tbf[r]);
-	}
-	if (!psw_sse_state_init(km, tlen, &sv)) goto fail;
-	ok = 1;
+	do {
+		tp = psw_gen_tp_i16(km, tlen, t_use, m, mat);
+		if (tp == 0) { failed = 1; break; }
+		tbf = psw_gen_base_freq_i16(km, tlen, t_use, m, scale);
+		if (tbf == 0) { failed = 1; break; }
+		go_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
+		ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
+		if (go_t == 0 || ge_t == 0) { failed = 1; break; }
+		for (r = 0; r < tlen; ++r) {
+			go_t[r] = psw_sat16((int32_t)gapo * tbf[r]);
+			ge_t[r] = psw_sat16((int32_t)gape * tbf[r]);
+		}
+		if (!psw_sse_state_init(km, tlen, &sv)) { failed = 1; break; }
+		ok = 1;
 
-	if (m_cigar_ && n_cigar_ && cigar_) {
-		*n_cigar_ = 0;
-		z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
-		off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
-		if (z == 0 || off == 0) goto fail;
-	}
-
-	if (qlen == 0 || tlen == 0) {
-		int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
-		                       : psw_gap_only_query_scalar_i16(go_q, ge_q, qlen);
-		score32 = s32;
 		if (m_cigar_ && n_cigar_ && cigar_) {
 			*n_cigar_ = 0;
-			if (qlen == 0 && tlen > 0)
-				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_DEL, tlen);
-			else if (tlen == 0 && qlen > 0)
-				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_INS, qlen);
+			z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
+			off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
+			if (z == 0 || off == 0) { failed = 1; break; }
 		}
-		goto done2;
-	}
 
-	for (r = 0; r < qlen + tlen - 1; ++r) {
-		int32_t st = 0, en = tlen - 1, st0, en0;
-		int16_t x1, v1;
-		if (st < r - qlen + 1) st = r - qlen + 1;
-		if (en > r) en = r;
-		if (st < (r - w + 1) >> 1) st = (r - w + 1) >> 1;
-		if (en > (r + w) >> 1) en = (r + w) >> 1;
-		if (st > en) continue;
-		st0 = st; en0 = en;
-		st = (st / 8) * 8;
-		en = ((en + 8) / 8) * 8 - 1;
-
-		if (st0 != 0) {
-			if (r > st0 + st0 + w - 1) x1 = v1 = 0;
-			else {
-				x1 = sv.x16[st0 - 1];
-				v1 = sv.v16[st0 - 1];
+		if (qlen == 0 || tlen == 0) {
+			int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
+			                       : psw_gap_only_query_scalar_i16(go_q, ge_q, qlen);
+			score32 = s32;
+			if (m_cigar_ && n_cigar_ && cigar_) {
+				*n_cigar_ = 0;
+				if (qlen == 0 && tlen > 0)
+					*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_DEL, tlen);
+				else if (tlen == 0 && qlen > 0)
+					*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_INS, qlen);
 			}
-		} else {
-			x1 = 0;
-			v1 = r ? go_q : 0;
+			break;
 		}
-		if (en0 != r) {
-			if (r < en0 + en0 - w - 1) sv.y16[en0] = sv.u16[en0] = 0;
-		} else {
-			sv.y16[r] = 0;
-			sv.u16[r] = r ? go_t[r - 1] : 0;
-		}
-		if (z) off[r] = st0;
-		psw_sse_core_ps((int)r, (int)st0, (int)en0, (int)st, (int)en, &sv, z ? z + (size_t)r * n_col : 0,
-		                go_q, ge_q, go_t, ge_t, qlen, tlen, query, tp, x1, v1);
 
-		if (r > 0) {
-			if (last_H0_t >= st0 && last_H0_t <= en0)
-				H0 += (int32_t)sv.v16[last_H0_t] - ((int32_t)go_q + ge_q);
-			else {
-				++last_H0_t;
-				H0 += (int32_t)sv.u16[last_H0_t] - ((int32_t)go_t[last_H0_t] + ge_t[last_H0_t]);
+		for (r = 0; r < qlen + tlen - 1; ++r) {
+			int32_t st = 0, en = tlen - 1, st0, en0;
+			int16_t x1, v1;
+			if (st < r - qlen + 1) st = r - qlen + 1;
+			if (en > r) en = r;
+			if (st < (r - w + 1) >> 1) st = (r - w + 1) >> 1;
+			if (en > (r + w) >> 1) en = (r + w) >> 1;
+			if (st > en) continue;
+			st0 = st; en0 = en;
+			st = (st / 8) * 8;
+			en = ((en + 8) / 8) * 8 - 1;
+
+			if (st0 != 0) {
+				if (r > st0 + st0 + w - 1) x1 = v1 = 0;
+				else {
+					x1 = sv.x16[st0 - 1];
+					v1 = sv.v16[st0 - 1];
+				}
+			} else {
+				x1 = 0;
+				v1 = r ? go_q : 0;
 			}
-		} else {
-			H0 = (int32_t)sv.v16[0] - ((int32_t)go_t[0] + ge_t[0] + go_q + ge_q);
-			last_H0_t = 0;
+			if (en0 != r) {
+				if (r < en0 + en0 - w - 1) sv.y16[en0] = sv.u16[en0] = 0;
+			} else {
+				sv.y16[r] = 0;
+				sv.u16[r] = r ? go_t[r - 1] : 0;
+			}
+			if (z) off[r] = st0;
+			psw_sse_core_ps((int)r, (int)st0, (int)en0, (int)st, (int)en, &sv, z ? z + (size_t)r * n_col : 0,
+			                go_q, ge_q, go_t, ge_t, qlen, tlen, query, tp, x1, v1);
+
+			if (r > 0) {
+				if (last_H0_t >= st0 && last_H0_t <= en0)
+					H0 += (int32_t)sv.v16[last_H0_t] - ((int32_t)go_q + ge_q);
+				else {
+					++last_H0_t;
+					H0 += (int32_t)sv.u16[last_H0_t] - ((int32_t)go_t[last_H0_t] + ge_t[last_H0_t]);
+				}
+			} else {
+				H0 = (int32_t)sv.v16[0] - ((int32_t)go_t[0] + ge_t[0] + go_q + ge_q);
+				last_H0_t = 0;
+			}
 		}
-	}
-	score32 = H0;
-	if (z && off)
-		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1, m_cigar_, n_cigar_, cigar_);
+		score32 = H0;
+		if (z && off)
+			psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1, m_cigar_, n_cigar_, cigar_);
+	} while (0);
 
-goto done2;
-
-fail:
-	if (!ok) sv.mem = 0;
-	score32 = INT32_MIN;
-
-done2:
+	if (failed) score32 = INT32_MIN;
 	if (z) kfree(km, z);
 	if (off) kfree(km, off);
 	if (ok) psw_sse_state_destroy(km, &sv);
