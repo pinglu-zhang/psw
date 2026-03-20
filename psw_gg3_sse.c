@@ -113,10 +113,13 @@ static inline int16_t psw_dot_scaled_sse_m5(const int16_t *x, const int16_t *y, 
 	__m128i xv = _mm_loadl_epi64((const __m128i*)x);
 	__m128i yv = _mm_loadl_epi64((const __m128i*)y);
 	__m128i madd = _mm_madd_epi16(xv, yv);
-	int32_t tmp[4];
-	int32_t acc;
-	_mm_storeu_si128((__m128i*)tmp, madd);
-	acc = tmp[0] + tmp[1] + (int32_t)x[4] * y[4];
+
+	// 把 lane1 移到 lane0
+	__m128i hi = _mm_srli_si128(madd, 4);
+	madd = _mm_add_epi32(madd, hi);
+
+	int32_t acc = _mm_cvtsi128_si32(madd);
+	acc += (int32_t)x[4] * y[4];
 	acc >>= scale_shift;
 	return psw_sat16(acc);
 }
@@ -331,19 +334,25 @@ static inline void psw_fill_pp_score_block(int16_t *dst, int tbase, int r, int s
 {
     int lane;
     (void)qlen;
+
     if (tbase >= st0 && tbase + 7 <= en0 && tbase + 7 < tlen) {
-        for (lane = 0; lane < 8; ++lane) {
-            int t = tbase + lane;
-            int j = r - t;
-            const int16_t *qpj = qp + (size_t)j * m;
-            const int16_t *tfi = tf + (size_t)t * m;
-            dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        int t = tbase;
+        int j = r - tbase;
+        const int16_t *qpj = qp + (size_t)j * m;
+        const int16_t *tfi = tf + (size_t)t * m;
+        if (m == 5) {
+            for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= 5, tfi += 5)
+                dst[lane] = (int16_t)(psw_dot_scaled_sse_m5(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        } else {
+            for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= m, tfi += m)
+                dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
         }
         return;
     }
+
     for (lane = 0; lane < 8; ++lane) {
         int t = tbase + lane;
-        if (t >= st0 && t <= en0 && t >= 0 && t < tlen) {
+        if (t >= st0 && t <= en0 && t < tlen) {
             int j = r - t;
             const int16_t *qpj = qp + (size_t)j * m;
             const int16_t *tfi = tf + (size_t)t * m;
@@ -358,22 +367,25 @@ static inline void psw_fill_ps_score_block(int16_t *dst, int tbase, int r, int s
                                            const int16_t *go_t, const int16_t *ge_t)
 {
     int lane;
+    const int16_t go_qe = (int16_t)(go_q + ge_q);
     (void)qlen;
+
     if (tbase >= st0 && tbase + 7 <= en0 && tbase + 7 < tlen) {
-        for (lane = 0; lane < 8; ++lane) {
-            int t = tbase + lane;
-            int j = r - t;
+        int t = tbase;
+        int j = r - tbase;
+        for (lane = 0; lane < 8; ++lane, ++t, --j) {
             int aidx = (int)query[j];
-            dst[lane] = (int16_t)(tp[(size_t)aidx * tlen + t] + go_t[t] + ge_t[t] + go_q + ge_q);
+            dst[lane] = (int16_t)(tp[(size_t)aidx * tlen + t] + go_t[t] + ge_t[t] + go_qe);
         }
         return;
     }
+
     for (lane = 0; lane < 8; ++lane) {
         int t = tbase + lane;
-        if (t >= st0 && t <= en0 && t >= 0 && t < tlen) {
+        if (t >= st0 && t <= en0 && t < tlen) {
             int j = r - t;
             int aidx = (int)query[j];
-            dst[lane] = (int16_t)(tp[(size_t)aidx * tlen + t] + go_t[t] + ge_t[t] + go_q + ge_q);
+            dst[lane] = (int16_t)(tp[(size_t)aidx * tlen + t] + go_t[t] + ge_t[t] + go_qe);
         } else dst[lane] = 0;
     }
 }
@@ -384,10 +396,8 @@ static inline void psw_fill_rev_qgap_block(int16_t *dst, int tbase, int r, int s
     int lane;
     (void)qlen;
     if (tbase >= st0 && tbase + 7 <= en0) {
-        for (lane = 0; lane < 8; ++lane) {
-            int t = tbase + lane;
-            dst[lane] = go_q[r - t];
-        }
+        const int16_t *g = go_q + (r - tbase);
+        for (lane = 0; lane < 8; ++lane) dst[lane] = g[-lane];
         return;
     }
     for (lane = 0; lane < 8; ++lane) {
@@ -551,7 +561,7 @@ static inline void psw_sse_core_ps(int r, int st0, int en0, int st, int en,
 		}
 	} else {
 		for (t = st; t <= en; t += 8) {
-			__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_;
+			__m128i z, a, b, xt1, vt1, ut, yt, tmp, qopen_, topen_;
 			psw_fill_ps_score_block(score0, t, r, st0, en0, qlen, tlen, query, tp, go_q, ge_q, go_t, ge_t);
 			qopen_ = psw_load_band_go_t(go_t, t, st0, en0, tlen);
 			z = _mm_loadu_si128((const __m128i*)score0);
