@@ -13,8 +13,8 @@ static int kseq_file_read(FILE *fp, void *buf, int len)
 }
 KSEQ_INIT(FILE*, kseq_file_read)
 
-#define PSW_DIM 5
 #define ALIGN_BLOCK 80
+#define MAX_ALPHABET_DIM 32
 
 typedef struct {
     char *name;
@@ -23,7 +23,15 @@ typedef struct {
 } fasta_rec_t;
 
 typedef struct {
+    int dim;
+    int unknown_idx;
+    int map[256];
+    char symbols[MAX_ALPHABET_DIM];
+} alphabet_cfg_t;
+
+typedef struct {
     const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp or gg3_sse_ps */
+    const char *seq_type; /* dna or protein */
     int8_t match;
     int8_t mismatch;
     int8_t gapo;
@@ -39,6 +47,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "Usage: %s [options] <target.fasta> <query.fasta>\n", prog);
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp or gg3_sse_ps [gg_pp]\n");
+    fprintf(stderr, "  -S STR   sequence type: dna or protein [dna]\n");
     fprintf(stderr, "  -A INT   match score [5]\n");
     fprintf(stderr, "  -B INT   mismatch penalty (positive) [4]\n");
     fprintf(stderr, "  -O INT   gap open penalty [6]\n");
@@ -56,15 +65,58 @@ static char *xstrdup(const char *s)
     return p;
 }
 
-static int base_to_idx(char c)
+static void init_dna_alphabet(alphabet_cfg_t *cfg)
 {
-    switch (c) {
-    case 'A': case 'a': return 0;
-    case 'C': case 'c': return 1;
-    case 'G': case 'g': return 2;
-    case 'T': case 't': return 3;
-    default: return 4; /* N and unknown */
+    int i;
+    const char *dna = "ACGT";
+    cfg->dim = 5;
+    cfg->unknown_idx = 4;
+    for (i = 0; i < 256; ++i) cfg->map[i] = cfg->unknown_idx;
+    for (i = 0; i < 4; ++i) {
+        char c = dna[i];
+        cfg->map[(unsigned char)c] = i;
+        cfg->map[(unsigned char)tolower((unsigned char)c)] = i;
+        cfg->symbols[i] = c;
     }
+    cfg->map[(unsigned char)'N'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'n'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'U'] = 3;
+    cfg->map[(unsigned char)'u'] = 3;
+    cfg->symbols[cfg->unknown_idx] = 'N';
+}
+
+static void init_protein_alphabet(alphabet_cfg_t *cfg)
+{
+    int i;
+    const char *aa = "ARNDCQEGHILKMFPSTWYV";
+    cfg->dim = 21;
+    cfg->unknown_idx = 20;
+    for (i = 0; i < 256; ++i) cfg->map[i] = cfg->unknown_idx;
+    for (i = 0; i < 20; ++i) {
+        char c = aa[i];
+        cfg->map[(unsigned char)c] = i;
+        cfg->map[(unsigned char)tolower((unsigned char)c)] = i;
+        cfg->symbols[i] = c;
+    }
+    cfg->map[(unsigned char)'B'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'b'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'Z'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'z'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'J'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'j'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'U'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'u'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'O'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'o'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'X'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'x'] = cfg->unknown_idx;
+    cfg->map[(unsigned char)'*'] = cfg->unknown_idx;
+    cfg->symbols[cfg->unknown_idx] = 'X';
+}
+
+static int base_to_idx(const alphabet_cfg_t *cfg, char c)
+{
+    return cfg->map[(unsigned char)c];
 }
 
 static int is_gap_char(char c)
@@ -72,10 +124,10 @@ static int is_gap_char(char c)
     return c == '-' || c == '.';
 }
 
-static int idx_to_base(int idx)
+static int idx_to_base(const alphabet_cfg_t *cfg, int idx)
 {
-    static const char table[] = { 'A', 'C', 'G', 'T', 'N' };
-    return (idx >= 0 && idx < PSW_DIM) ? (int)table[idx] : (int)'N';
+    if (idx >= 0 && idx < cfg->dim) return (int)cfg->symbols[idx];
+    return (int)cfg->symbols[cfg->unknown_idx];
 }
 
 static int clamp_i8(int v)
@@ -94,21 +146,20 @@ static int parse_int_arg(const char *s, int *out)
     return 0;
 }
 
-static void gen_simple_mat(int8_t *mat, int8_t match, int8_t mismatch_penalty)
+static void gen_simple_mat(int8_t *mat, int dim, int unknown_idx, int8_t match, int8_t mismatch_penalty)
 {
     int i, j;
     int mismatch_i = mismatch_penalty > 0 ? -(int)mismatch_penalty : (int)mismatch_penalty;
     int8_t mismatch = (int8_t)clamp_i8(mismatch_i);
 
-    for (i = 0; i < PSW_DIM - 1; ++i) {
-        for (j = 0; j < PSW_DIM - 1; ++j) {
-            int8_t v = i == j ? match : mismatch;
-            mat[i * PSW_DIM + j] = v;
+    for (i = 0; i < dim; ++i) {
+        for (j = 0; j < dim; ++j) {
+            int8_t v;
+            if (i == unknown_idx || j == unknown_idx) v = 0;
+            else v = i == j ? match : mismatch;
+            mat[i * dim + j] = v;
         }
-        mat[i * PSW_DIM + (PSW_DIM - 1)] = 0;
     }
-    for (j = 0; j < PSW_DIM; ++j)
-        mat[(PSW_DIM - 1) * PSW_DIM + j] = 0;
 }
 
 static void free_fasta_records(fasta_rec_t *rec, int n)
@@ -184,7 +235,7 @@ static int load_fasta(const char *path, fasta_rec_t **out_rec, int *out_n)
     return 0;
 }
 
-static int build_profile_from_aligned_fasta(const fasta_rec_t *rec, int n,
+static int build_profile_from_aligned_fasta(const fasta_rec_t *rec, int n, const alphabet_cfg_t *cfg,
                                             uint32_t **out_prof, int *out_len, int *out_depth)
 {
     int i, j;
@@ -196,14 +247,14 @@ static int build_profile_from_aligned_fasta(const fasta_rec_t *rec, int n,
     for (i = 1; i < n; ++i)
         if (rec[i].len != len) return -1;
 
-    prof = (uint32_t*)calloc((size_t)len * PSW_DIM, sizeof(uint32_t));
+    prof = (uint32_t*)calloc((size_t)len * cfg->dim, sizeof(uint32_t));
     if (prof == 0) return -1;
 
     for (i = 0; i < n; ++i) {
         for (j = 0; j < len; ++j) {
             char c = rec[i].seq[j];
             if (is_gap_char(c)) continue; /* implicit gap */
-            prof[(size_t)j * PSW_DIM + base_to_idx(c)]++;
+            prof[(size_t)j * cfg->dim + base_to_idx(cfg, c)]++;
         }
     }
 
@@ -213,7 +264,8 @@ static int build_profile_from_aligned_fasta(const fasta_rec_t *rec, int n,
     return 0;
 }
 
-static int build_query_index_from_fasta(const fasta_rec_t *rec, int n, uint8_t **out_q, int *out_len)
+static int build_query_index_from_fasta(const fasta_rec_t *rec, int n, const alphabet_cfg_t *cfg,
+                                        uint8_t **out_q, int *out_len)
 {
     int i, k = 0;
     uint8_t *q;
@@ -225,7 +277,7 @@ static int build_query_index_from_fasta(const fasta_rec_t *rec, int n, uint8_t *
     for (i = 0; i < rec[0].len; ++i) {
         char c = rec[0].seq[i];
         if (is_gap_char(c)) continue;
-        q[k++] = (uint8_t)base_to_idx(c);
+        q[k++] = (uint8_t)base_to_idx(cfg, c);
     }
 
     *out_q = q;
@@ -233,25 +285,25 @@ static int build_query_index_from_fasta(const fasta_rec_t *rec, int n, uint8_t *
     return 0;
 }
 
-static char *consensus_from_profile(const uint32_t *prof, int len)
+static char *consensus_from_profile(const uint32_t *prof, int len, const alphabet_cfg_t *cfg)
 {
     int i, b;
     char *s = (char*)malloc((size_t)len + 1);
     if (s == 0) return 0;
 
     for (i = 0; i < len; ++i) {
-        int best = 0;
+        int best = cfg->unknown_idx;
         uint32_t best_v = 0;
         uint32_t sum = 0;
-        for (b = 0; b < PSW_DIM; ++b) {
-            uint32_t v = prof[(size_t)i * PSW_DIM + b];
+        for (b = 0; b < cfg->dim; ++b) {
+            uint32_t v = prof[(size_t)i * cfg->dim + b];
             sum += v;
             if (v > best_v) {
                 best_v = v;
                 best = b;
             }
         }
-        s[i] = (char)(sum == 0 ? '-' : idx_to_base(best));
+        s[i] = (char)(sum == 0 ? '-' : idx_to_base(cfg, best));
     }
     s[len] = '\0';
     return s;
@@ -340,6 +392,7 @@ static int parse_cli(int argc, char **argv, cli_opt_t *opt)
     for (i = 1; i < argc; ++i) {
         int v;
         if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) opt->mode = argv[++i];
+        else if ((strcmp(argv[i], "-S") == 0 || strcmp(argv[i], "--seq-type") == 0) && i + 1 < argc) opt->seq_type = argv[++i];
         else if (strcmp(argv[i], "-A") == 0 && i + 1 < argc) {
             if (parse_int_arg(argv[++i], &v) != 0) return -1;
             opt->match = (int8_t)clamp_i8(v);
@@ -371,15 +424,18 @@ static int parse_cli(int argc, char **argv, cli_opt_t *opt)
 int main(int argc, char **argv)
 {
     cli_opt_t opt;
-    int8_t mat[PSW_DIM * PSW_DIM];
+    int8_t *mat = 0;
     uint32_t *cigar = 0;
     int m_cigar = 0, n_cigar = 0;
     float score = PSW_NEG_INF_F;
+    alphabet_cfg_t alpha;
+    int dim;
 
     fasta_rec_t *target_rec = 0, *query_rec = 0;
     int n_target = 0, n_query = 0;
 
     opt.mode = "gg_pp";
+    opt.seq_type = "dna";
     opt.match = 5;
     opt.mismatch = 4;
     opt.gapo = 6;
@@ -394,28 +450,45 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    if (strcmp(opt.seq_type, "dna") == 0) init_dna_alphabet(&alpha);
+    else if (strcmp(opt.seq_type, "protein") == 0 || strcmp(opt.seq_type, "prot") == 0) init_protein_alphabet(&alpha);
+    else {
+        fprintf(stderr, "ERROR: --seq-type/-S must be dna or protein\n");
+        return 1;
+    }
+    dim = alpha.dim;
+
+    mat = (int8_t*)malloc((size_t)dim * dim * sizeof(int8_t));
+    if (mat == 0) {
+        fprintf(stderr, "ERROR: failed to allocate score matrix\n");
+        return 1;
+    }
+
     if (strcmp(opt.mode, "gg_pp") != 0 && strcmp(opt.mode, "gg_ps") != 0 &&
         strcmp(opt.mode, "gg2_pp") != 0 && strcmp(opt.mode, "gg2_ps") != 0 &&
         strcmp(opt.mode, "gg3_pp") != 0 && strcmp(opt.mode, "gg3_ps") != 0 &&
         strcmp(opt.mode, "gg3_sse_pp") != 0 && strcmp(opt.mode, "gg3_sse_ps") != 0 &&
         strcmp(opt.mode, "pp") != 0 && strcmp(opt.mode, "ps") != 0) {
         fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp or gg3_sse_ps\n");
+        free(mat);
         return 1;
     }
 
     if (load_fasta(opt.target_path, &target_rec, &n_target) != 0 || n_target == 0) {
         fprintf(stderr, "ERROR: failed to read target FASTA: %s\n", opt.target_path);
         free_fasta_records(target_rec, n_target);
+        free(mat);
         return 1;
     }
     if (load_fasta(opt.query_path, &query_rec, &n_query) != 0 || n_query == 0) {
         fprintf(stderr, "ERROR: failed to read query FASTA: %s\n", opt.query_path);
         free_fasta_records(target_rec, n_target);
         free_fasta_records(query_rec, n_query);
+        free(mat);
         return 1;
     }
 
-    gen_simple_mat(mat, opt.match, opt.mismatch);
+    gen_simple_mat(mat, dim, alpha.unknown_idx, opt.match, opt.mismatch);
 
     if (strcmp(opt.mode, "gg_pp") == 0 || strcmp(opt.mode, "pp") == 0 ||
         strcmp(opt.mode, "gg2_pp") == 0 || strcmp(opt.mode, "gg3_pp") == 0 ||
@@ -426,32 +499,33 @@ int main(int argc, char **argv)
         psw_prof_t target, query;
         char *t_cons = 0, *q_cons = 0;
 
-        if (build_profile_from_aligned_fasta(target_rec, n_target, &target_prof, &tlen, &tdepth) != 0 ||
-            build_profile_from_aligned_fasta(query_rec, n_query, &query_prof, &qlen, &qdepth) != 0) {
+        if (build_profile_from_aligned_fasta(target_rec, n_target, &alpha, &target_prof, &tlen, &tdepth) != 0 ||
+            build_profile_from_aligned_fasta(query_rec, n_query, &alpha, &query_prof, &qlen, &qdepth) != 0) {
             fprintf(stderr, "ERROR: gg_pp requires aligned FASTA (all records same length within each file)\n");
             free(target_prof); free(query_prof);
             free_fasta_records(target_rec, n_target);
             free_fasta_records(query_rec, n_query);
+            free(mat);
             return 1;
         }
 
-        target.len = tlen; target.dim = PSW_DIM; target.depth = tdepth; target.prof = target_prof;
-        query.len = qlen; query.dim = PSW_DIM; query.depth = qdepth; query.prof = query_prof;
+        target.len = tlen; target.dim = dim; target.depth = tdepth; target.prof = target_prof;
+        query.len = qlen; query.dim = dim; query.depth = qdepth; query.prof = query_prof;
 
         if (strcmp(opt.mode, "gg2_pp") == 0) {
-            score = psw_gg2_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
+            score = psw_gg2_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
                                opt.gapo, opt.gape, opt.band,
                                &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "gg3_pp") == 0) {
-            score = psw_gg3_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
+            score = psw_gg3_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
                                opt.gapo, opt.gape, opt.band,
                                &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "gg3_sse_pp") == 0) {
-            score = psw_gg3_sse_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
+            score = psw_gg3_sse_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
                                    opt.gapo, opt.gape, opt.band,
                                    &m_cigar, &n_cigar, &cigar);
         } else {
-            score = psw_gg_pp(0, qlen, &query, tlen, &target, PSW_DIM, mat,
+            score = psw_gg_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
                               opt.gapo, opt.gape, opt.band,
                               &m_cigar, &n_cigar, &cigar);
         }
@@ -461,6 +535,7 @@ int main(int argc, char **argv)
                (strcmp(opt.mode, "gg3_pp") == 0 ? "gg3_pp" :
                (strcmp(opt.mode, "gg3_sse_pp") == 0 ? "gg3_sse_pp" : "gg_pp")),
                score);
+        printf("seq_type=%s\n", strcmp(opt.seq_type, "prot") == 0 ? "protein" : opt.seq_type);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
         printf("query =%s (n_seq=%d, len=%d)\n", opt.query_path, qdepth, qlen);
         printf("cigar: ");
@@ -468,8 +543,8 @@ int main(int argc, char **argv)
         else printf("<empty>\n");
 
         if (opt.print_alignment && cigar && n_cigar > 0) {
-            q_cons = consensus_from_profile(query_prof, qlen);
-            t_cons = consensus_from_profile(target_prof, tlen);
+            q_cons = consensus_from_profile(query_prof, qlen, &alpha);
+            t_cons = consensus_from_profile(target_prof, tlen, &alpha);
             if (q_cons && t_cons) print_alignment(q_cons, t_cons, cigar, n_cigar);
             free(q_cons); free(t_cons);
         }
@@ -483,36 +558,38 @@ int main(int argc, char **argv)
         psw_prof_t target;
         char *q_str = 0, *t_cons = 0;
 
-        if (build_profile_from_aligned_fasta(target_rec, n_target, &target_prof, &tlen, &tdepth) != 0) {
+        if (build_profile_from_aligned_fasta(target_rec, n_target, &alpha, &target_prof, &tlen, &tdepth) != 0) {
             fprintf(stderr, "ERROR: gg_ps target must be aligned profile FASTA\n");
             free_fasta_records(target_rec, n_target);
             free_fasta_records(query_rec, n_query);
+            free(mat);
             return 1;
         }
-        if (build_query_index_from_fasta(query_rec, n_query, &query_idx, &qlen) != 0) {
+        if (build_query_index_from_fasta(query_rec, n_query, &alpha, &query_idx, &qlen) != 0) {
             fprintf(stderr, "ERROR: gg_ps query FASTA must contain exactly one sequence\n");
             free(target_prof);
             free_fasta_records(target_rec, n_target);
             free_fasta_records(query_rec, n_query);
+            free(mat);
             return 1;
         }
 
-        target.len = tlen; target.dim = PSW_DIM; target.depth = tdepth; target.prof = target_prof;
+        target.len = tlen; target.dim = dim; target.depth = tdepth; target.prof = target_prof;
 
         if (strcmp(opt.mode, "gg2_ps") == 0) {
-            score = psw_gg2_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
+            score = psw_gg2_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
                                opt.gapo, opt.gape, opt.band,
                                &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "gg3_ps") == 0) {
-            score = psw_gg3_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
+            score = psw_gg3_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
                                opt.gapo, opt.gape, opt.band,
                                &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "gg3_sse_ps") == 0) {
-            score = psw_gg3_sse_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
+            score = psw_gg3_sse_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
                                    opt.gapo, opt.gape, opt.band,
                                    &m_cigar, &n_cigar, &cigar);
         } else {
-            score = psw_gg_ps(0, qlen, query_idx, tlen, &target, PSW_DIM, mat,
+            score = psw_gg_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
                               opt.gapo, opt.gape, opt.band,
                               &m_cigar, &n_cigar, &cigar);
         }
@@ -522,6 +599,7 @@ int main(int argc, char **argv)
                (strcmp(opt.mode, "gg3_ps") == 0 ? "gg3_ps" :
                (strcmp(opt.mode, "gg3_sse_ps") == 0 ? "gg3_sse_ps" : "gg_ps")),
                score);
+        printf("seq_type=%s\n", strcmp(opt.seq_type, "prot") == 0 ? "protein" : opt.seq_type);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
         printf("query =%s (n_seq=1, len=%d)\n", opt.query_path, qlen);
         printf("cigar: ");
@@ -530,7 +608,7 @@ int main(int argc, char **argv)
 
         if (opt.print_alignment && cigar && n_cigar > 0) {
             q_str = xstrdup(query_rec[0].seq);
-            t_cons = consensus_from_profile(target_prof, tlen);
+            t_cons = consensus_from_profile(target_prof, tlen, &alpha);
             if (q_str && t_cons) print_alignment(q_str, t_cons, cigar, n_cigar);
             free(q_str);
             free(t_cons);
@@ -543,5 +621,6 @@ int main(int argc, char **argv)
     kfree(0, cigar);
     free_fasta_records(target_rec, n_target);
     free_fasta_records(query_rec, n_query);
+    free(mat);
     return 0;
 }

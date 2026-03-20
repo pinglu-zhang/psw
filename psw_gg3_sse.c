@@ -114,12 +114,55 @@ static inline int16_t psw_dot_scaled_sse_m5(const int16_t *x, const int16_t *y, 
 	__m128i yv = _mm_loadl_epi64((const __m128i*)y);
 	__m128i madd = _mm_madd_epi16(xv, yv);
 
-	// 把 lane1 移到 lane0
+	// Move lane1 to lane0 then accumulate.
 	__m128i hi = _mm_srli_si128(madd, 4);
 	madd = _mm_add_epi32(madd, hi);
 
 	int32_t acc = _mm_cvtsi128_si32(madd);
 	acc += (int32_t)x[4] * y[4];
+	acc >>= scale_shift;
+	return psw_sat16(acc);
+}
+
+static inline int32_t psw_hsum_epi32_sse2(__m128i v)
+{
+	__m128i hi = _mm_srli_si128(v, 8);
+	__m128i s = _mm_add_epi32(v, hi);
+	hi = _mm_srli_si128(s, 4);
+	s = _mm_add_epi32(s, hi);
+	return _mm_cvtsi128_si32(s);
+}
+
+static inline int32_t psw_dot_acc_sse_m20(const int16_t *x, const int16_t *y)
+{
+	__m128i s = _mm_setzero_si128();
+	__m128i xv, yv;
+
+	xv = _mm_loadu_si128((const __m128i*)x);
+	yv = _mm_loadu_si128((const __m128i*)y);
+	s = _mm_add_epi32(s, _mm_madd_epi16(xv, yv));
+
+	xv = _mm_loadu_si128((const __m128i*)(x + 8));
+	yv = _mm_loadu_si128((const __m128i*)(y + 8));
+	s = _mm_add_epi32(s, _mm_madd_epi16(xv, yv));
+
+	xv = _mm_loadl_epi64((const __m128i*)(x + 16));
+	yv = _mm_loadl_epi64((const __m128i*)(y + 16));
+	s = _mm_add_epi32(s, _mm_madd_epi16(xv, yv));
+
+	return psw_hsum_epi32_sse2(s);
+}
+
+static inline int16_t psw_dot_scaled_sse_m20(const int16_t *x, const int16_t *y, int8_t scale_shift)
+{
+	int32_t acc = psw_dot_acc_sse_m20(x, y);
+	acc >>= scale_shift;
+	return psw_sat16(acc);
+}
+
+static inline int16_t psw_dot_scaled_sse_m21(const int16_t *x, const int16_t *y, int8_t scale_shift)
+{
+	int32_t acc = psw_dot_acc_sse_m20(x, y) + (int32_t)x[20] * y[20];
 	acc >>= scale_shift;
 	return psw_sat16(acc);
 }
@@ -133,6 +176,8 @@ static inline int16_t psw_dot_scaled_sse(const int16_t *x, const int16_t *y, int
 
 	if (scale_shift <= 0) return 0;
 	if (m == 5) return psw_dot_scaled_sse_m5(x, y, scale_shift);
+	if (m == 20) return psw_dot_scaled_sse_m20(x, y, scale_shift);
+	if (m == 21) return psw_dot_scaled_sse_m21(x, y, scale_shift);
 	for (; i + 8 <= m; i += 8) {
 		__m128i xv = _mm_loadu_si128((const __m128i*)(x + i));
 		__m128i yv = _mm_loadu_si128((const __m128i*)(y + i));
@@ -327,10 +372,98 @@ static inline __m128i psw_load_band_go_t(const int16_t *go_t, int tbase, int st0
 	}
 }
 
-static inline void psw_fill_pp_score_block(int16_t *dst, int tbase, int r, int st0, int en0,
-                                           int qlen, int tlen, int m, int8_t scale_shift,
-                                           const int16_t *qp, const int16_t *tf,
-                                           const int16_t *go_ge_q, const int16_t *go_ge_t)
+// m-specific helpers for SSE hot loop, avoid per-lane m branching
+static inline void psw_fill_pp_score_block_m5(int16_t *dst, int tbase, int r, int st0, int en0,
+                                              int qlen, int tlen, int8_t scale_shift,
+                                              const int16_t *qp, const int16_t *tf,
+                                              const int16_t *go_ge_q, const int16_t *go_ge_t)
+{
+    int lane;
+    (void)qlen;
+
+    if (tbase >= st0 && tbase + 7 <= en0 && tbase + 7 < tlen) {
+        int t = tbase;
+        int j = r - tbase;
+        const int16_t *qpj = qp + (size_t)j * 5;
+        const int16_t *tfi = tf + (size_t)t * 5;
+        for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= 5, tfi += 5)
+            dst[lane] = (int16_t)(psw_dot_scaled_sse_m5(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        return;
+    }
+
+    for (lane = 0; lane < 8; ++lane) {
+        int t = tbase + lane;
+        if (t >= st0 && t <= en0 && t < tlen) {
+            int j = r - t;
+            const int16_t *qpj = qp + (size_t)j * 5;
+            const int16_t *tfi = tf + (size_t)t * 5;
+            dst[lane] = (int16_t)(psw_dot_scaled_sse_m5(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        } else dst[lane] = 0;
+    }
+}
+
+static inline void psw_fill_pp_score_block_m20(int16_t *dst, int tbase, int r, int st0, int en0,
+                                               int qlen, int tlen, int8_t scale_shift,
+                                               const int16_t *qp, const int16_t *tf,
+                                               const int16_t *go_ge_q, const int16_t *go_ge_t)
+{
+    int lane;
+    (void)qlen;
+
+    if (tbase >= st0 && tbase + 7 <= en0 && tbase + 7 < tlen) {
+        int t = tbase;
+        int j = r - tbase;
+        const int16_t *qpj = qp + (size_t)j * 20;
+        const int16_t *tfi = tf + (size_t)t * 20;
+        for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= 20, tfi += 20)
+            dst[lane] = (int16_t)(psw_dot_scaled_sse_m20(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        return;
+    }
+
+    for (lane = 0; lane < 8; ++lane) {
+        int t = tbase + lane;
+        if (t >= st0 && t <= en0 && t < tlen) {
+            int j = r - t;
+            const int16_t *qpj = qp + (size_t)j * 20;
+            const int16_t *tfi = tf + (size_t)t * 20;
+            dst[lane] = (int16_t)(psw_dot_scaled_sse_m20(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        } else dst[lane] = 0;
+    }
+}
+
+static inline void psw_fill_pp_score_block_m21(int16_t *dst, int tbase, int r, int st0, int en0,
+                                               int qlen, int tlen, int8_t scale_shift,
+                                               const int16_t *qp, const int16_t *tf,
+                                               const int16_t *go_ge_q, const int16_t *go_ge_t)
+{
+    int lane;
+    (void)qlen;
+
+    if (tbase >= st0 && tbase + 7 <= en0 && tbase + 7 < tlen) {
+        int t = tbase;
+        int j = r - tbase;
+        const int16_t *qpj = qp + (size_t)j * 21;
+        const int16_t *tfi = tf + (size_t)t * 21;
+        for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= 21, tfi += 21)
+            dst[lane] = (int16_t)(psw_dot_scaled_sse_m21(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        return;
+    }
+
+    for (lane = 0; lane < 8; ++lane) {
+        int t = tbase + lane;
+        if (t >= st0 && t <= en0 && t < tlen) {
+            int j = r - t;
+            const int16_t *qpj = qp + (size_t)j * 21;
+            const int16_t *tfi = tf + (size_t)t * 21;
+            dst[lane] = (int16_t)(psw_dot_scaled_sse_m21(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
+        } else dst[lane] = 0;
+    }
+}
+
+static inline void psw_fill_pp_score_block_generic(int16_t *dst, int tbase, int r, int st0, int en0,
+                                                   int qlen, int tlen, int m, int8_t scale_shift,
+                                                   const int16_t *qp, const int16_t *tf,
+                                                   const int16_t *go_ge_q, const int16_t *go_ge_t)
 {
     int lane;
     (void)qlen;
@@ -340,13 +473,8 @@ static inline void psw_fill_pp_score_block(int16_t *dst, int tbase, int r, int s
         int j = r - tbase;
         const int16_t *qpj = qp + (size_t)j * m;
         const int16_t *tfi = tf + (size_t)t * m;
-        if (m == 5) {
-            for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= 5, tfi += 5)
-                dst[lane] = (int16_t)(psw_dot_scaled_sse_m5(qpj, tfi, scale_shift) + go_ge_t[t] + go_ge_q[j]);
-        } else {
-            for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= m, tfi += m)
-                dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
-        }
+        for (lane = 0; lane < 8; ++lane, ++t, --j, qpj -= m, tfi += m)
+            dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
         return;
     }
 
@@ -359,6 +487,26 @@ static inline void psw_fill_pp_score_block(int16_t *dst, int tbase, int r, int s
             dst[lane] = (int16_t)(psw_dot_scaled_sse(qpj, tfi, m, scale_shift) + go_ge_t[t] + go_ge_q[j]);
         } else dst[lane] = 0;
     }
+}
+
+static inline void psw_fill_pp_score_block(int16_t *dst, int tbase, int r, int st0, int en0,
+                                           int qlen, int tlen, int m, int8_t scale_shift,
+                                           const int16_t *qp, const int16_t *tf,
+                                           const int16_t *go_ge_q, const int16_t *go_ge_t)
+{
+    if (m == 20) {
+        psw_fill_pp_score_block_m20(dst, tbase, r, st0, en0, qlen, tlen, scale_shift, qp, tf, go_ge_q, go_ge_t);
+        return;
+    }
+    if (m == 21) {
+        psw_fill_pp_score_block_m21(dst, tbase, r, st0, en0, qlen, tlen, scale_shift, qp, tf, go_ge_q, go_ge_t);
+        return;
+    }
+    if (m == 5) {
+        psw_fill_pp_score_block_m5(dst, tbase, r, st0, en0, qlen, tlen, scale_shift, qp, tf, go_ge_q, go_ge_t);
+        return;
+    }
+    psw_fill_pp_score_block_generic(dst, tbase, r, st0, en0, qlen, tlen, m, scale_shift, qp, tf, go_ge_q, go_ge_t);
 }
 
 static inline void psw_fill_ps_score_block(int16_t *dst, int tbase, int r, int st0, int en0,

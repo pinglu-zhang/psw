@@ -26,14 +26,32 @@ run_case() {
     local name="$2"     # case folder name under gg_pp/ or gg_ps/
     local target="$3"
     local query="$4"
+    shift 4
 
     echo "----------------------------------------------------------------"
     echo "  [$mode] $name"
     echo "  target : $target"
     echo "  query  : $query"
     echo "----------------------------------------------------------------"
-    "$PSW" -t "$mode" -p "$target" "$query" || true
+    "$PSW" -t "$mode" "$@" -p "$target" "$query" || true
     echo ""
+}
+
+# Identify protein test case by folder name and pass sequence type explicitly.
+case_extra_args() {
+    local name="$1"
+    if [[ "$name" == "protein_case" ]]; then
+        echo "-S protein"
+    fi
+}
+
+pick_query_file_ps() {
+    local case_dir="$1"
+    if [[ -f "$case_dir/query_seq.fa" ]]; then
+        echo "$case_dir/query_seq.fa"
+    else
+        echo "$case_dir/query_aln.fa"
+    fi
 }
 
 # --------------------------------------------------------------------------
@@ -46,9 +64,11 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_pp"/*/; do
     name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg_pp" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_aln.fa"
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
 done
 
 # --------------------------------------------------------------------------
@@ -61,9 +81,12 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_ps"/*/; do
     name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg_ps" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_seq.fa"
+        "$query_file" \
+        "${extra_args[@]}"
 done
 
 echo "================================================================"
@@ -73,9 +96,11 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_pp"/*/; do
     name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg2_pp" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_aln.fa"
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
 done
 
 # --------------------------------------------------------------------------
@@ -88,9 +113,12 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_ps"/*/; do
     name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg2_ps" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_seq.fa"
+        "$query_file" \
+        "${extra_args[@]}"
 done
 
 echo "================================================================"
@@ -105,9 +133,11 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_pp"/*/; do
     name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg3_pp" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_aln.fa"
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
 done
 
 # --------------------------------------------------------------------------
@@ -120,9 +150,12 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_ps"/*/; do
     name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg3_ps" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_seq.fa"
+        "$query_file" \
+        "${extra_args[@]}"
 done
 
 echo "================================================================"
@@ -137,9 +170,11 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_pp"/*/; do
     name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg3_sse_pp" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_aln.fa"
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
 done
 
 # --------------------------------------------------------------------------
@@ -152,9 +187,12 @@ echo ""
 
 for case_dir in "$CASE_DIR/gg_ps"/*/; do
     name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
     run_case "gg3_sse_ps" "$name" \
         "$case_dir/target_aln.fa" \
-        "$case_dir/query_seq.fa"
+        "$query_file" \
+        "${extra_args[@]}"
 done
 
 echo "================================================================"
