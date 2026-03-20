@@ -11,8 +11,8 @@ TARGET_FA="${TARGET_FA:-$PROJECT_ROOT/test/MT-human.fa}"
 QUERY_FA="${QUERY_FA:-$PROJECT_ROOT/test/MT-orang.fa}"
 
 # Protein benchmark dataset (new)
-PROT_TARGET_FA="${PROT_TARGET_FA:-$PROJECT_ROOT/test/GAPDH-human.fa}"
-PROT_QUERY_FA="${PROT_QUERY_FA:-$PROJECT_ROOT/test/GAPDH-mouse.fa}"
+PROT_TARGET_FA="${PROT_TARGET_FA:-$PROJECT_ROOT/test/protein-perf-target.fa}"
+PROT_QUERY_FA="${PROT_QUERY_FA:-$PROJECT_ROOT/test/protein-perf-query.fa}"
 
 # MODES is space-separated; easy to extend later, e.g. MODES="gg_pp gg_ps new_mode"
 MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps gg3_pp gg3_ps gg3_sse_pp gg3_sse_ps}"
