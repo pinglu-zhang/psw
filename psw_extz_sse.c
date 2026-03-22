@@ -225,11 +225,67 @@ static inline int32_t psw_hsum_epi32_sse2(__m128i v)
 	return _mm_cvtsi128_si32(s);
 }
 
+static inline int32_t psw_dot_scaled_sse_mpad8_i32(const int16_t *x, const int16_t *y, int8_t scale_shift)
+{
+	__m128i xv0 = _mm_loadu_si128((const __m128i*)x);
+	__m128i yv0 = _mm_loadu_si128((const __m128i*)y);
+	__m128i sum = _mm_madd_epi16(xv0, yv0);
+	return psw_hsum_epi32_sse2(sum) >> scale_shift;
+}
+
+static inline int32_t psw_dot_scaled_sse_mpad16_i32(const int16_t *x, const int16_t *y, int8_t scale_shift)
+{
+	__m128i xv0 = _mm_loadu_si128((const __m128i*)x);
+	__m128i yv0 = _mm_loadu_si128((const __m128i*)y);
+	__m128i xv1 = _mm_loadu_si128((const __m128i*)(x + 8));
+	__m128i yv1 = _mm_loadu_si128((const __m128i*)(y + 8));
+	__m128i sum = _mm_add_epi32(_mm_madd_epi16(xv0, yv0), _mm_madd_epi16(xv1, yv1));
+	return psw_hsum_epi32_sse2(sum) >> scale_shift;
+}
+
+static inline int32_t psw_dot_scaled_sse_mpad24_i32(const int16_t *x, const int16_t *y, int8_t scale_shift)
+{
+	__m128i xv0 = _mm_loadu_si128((const __m128i*)x);
+	__m128i yv0 = _mm_loadu_si128((const __m128i*)y);
+	__m128i xv1 = _mm_loadu_si128((const __m128i*)(x + 8));
+	__m128i yv1 = _mm_loadu_si128((const __m128i*)(y + 8));
+	__m128i xv2 = _mm_loadu_si128((const __m128i*)(x + 16));
+	__m128i yv2 = _mm_loadu_si128((const __m128i*)(y + 16));
+	__m128i sum = _mm_add_epi32(_mm_madd_epi16(xv0, yv0), _mm_madd_epi16(xv1, yv1));
+	sum = _mm_add_epi32(sum, _mm_madd_epi16(xv2, yv2));
+	return psw_hsum_epi32_sse2(sum) >> scale_shift;
+}
+
+static inline int32_t psw_dot_scaled_sse_mpad32_i32(const int16_t *x, const int16_t *y, int8_t scale_shift)
+{
+	__m128i xv0 = _mm_loadu_si128((const __m128i*)x);
+	__m128i yv0 = _mm_loadu_si128((const __m128i*)y);
+	__m128i xv1 = _mm_loadu_si128((const __m128i*)(x + 8));
+	__m128i yv1 = _mm_loadu_si128((const __m128i*)(y + 8));
+	__m128i xv2 = _mm_loadu_si128((const __m128i*)(x + 16));
+	__m128i yv2 = _mm_loadu_si128((const __m128i*)(y + 16));
+	__m128i xv3 = _mm_loadu_si128((const __m128i*)(x + 24));
+	__m128i yv3 = _mm_loadu_si128((const __m128i*)(y + 24));
+	__m128i sum0 = _mm_add_epi32(_mm_madd_epi16(xv0, yv0), _mm_madd_epi16(xv1, yv1));
+	__m128i sum1 = _mm_add_epi32(_mm_madd_epi16(xv2, yv2), _mm_madd_epi16(xv3, yv3));
+	return psw_hsum_epi32_sse2(_mm_add_epi32(sum0, sum1)) >> scale_shift;
+}
+
 static inline int32_t psw_dot_scaled_sse_padded_i32(const int16_t *x, const int16_t *y, int mpad, int8_t scale_shift)
 {
 	__m128i sum0 = _mm_setzero_si128();
 	__m128i sum1 = _mm_setzero_si128();
 	int i = 0;
+
+	/* Fast paths for common alphabets (mpad is rounded to a multiple of 8). */
+	switch (mpad) {
+	case 8:  return psw_dot_scaled_sse_mpad8_i32(x, y, scale_shift);
+	case 16: return psw_dot_scaled_sse_mpad16_i32(x, y, scale_shift);
+	case 24: return psw_dot_scaled_sse_mpad24_i32(x, y, scale_shift);
+	case 32: return psw_dot_scaled_sse_mpad32_i32(x, y, scale_shift);
+	default: break;
+	}
+
 	for (; i + 15 < mpad; i += 16) {
 		__m128i xv0 = _mm_loadu_si128((const __m128i*)(x + i));
 		__m128i yv0 = _mm_loadu_si128((const __m128i*)(y + i));
@@ -247,14 +303,50 @@ static inline int32_t psw_dot_scaled_sse_padded_i32(const int16_t *x, const int1
 	return psw_hsum_epi32_sse2(sum0) >> scale_shift;
 }
 
+static inline void psw_dot2_scaled_sse_padded_i32(const int16_t *x0, const int16_t *x1,
+	                                               const int16_t *y, int mpad, int8_t scale_shift,
+	                                               int32_t *d0, int32_t *d1)
+{
+	__m128i s00 = _mm_setzero_si128(), s01 = _mm_setzero_si128();
+	__m128i s10 = _mm_setzero_si128(), s11 = _mm_setzero_si128();
+	int i = 0;
+	for (; i + 15 < mpad; i += 16) {
+		__m128i yv0 = _mm_loadu_si128((const __m128i*)(y + i));
+		__m128i yv1 = _mm_loadu_si128((const __m128i*)(y + i + 8));
+		__m128i x00 = _mm_loadu_si128((const __m128i*)(x0 + i));
+		__m128i x01 = _mm_loadu_si128((const __m128i*)(x0 + i + 8));
+		__m128i x10 = _mm_loadu_si128((const __m128i*)(x1 + i));
+		__m128i x11 = _mm_loadu_si128((const __m128i*)(x1 + i + 8));
+		s00 = _mm_add_epi32(s00, _mm_madd_epi16(x00, yv0));
+		s01 = _mm_add_epi32(s01, _mm_madd_epi16(x01, yv1));
+		s10 = _mm_add_epi32(s10, _mm_madd_epi16(x10, yv0));
+		s11 = _mm_add_epi32(s11, _mm_madd_epi16(x11, yv1));
+	}
+	s00 = _mm_add_epi32(s00, s01);
+	s10 = _mm_add_epi32(s10, s11);
+	for (; i < mpad; i += 8) {
+		__m128i yv = _mm_loadu_si128((const __m128i*)(y + i));
+		__m128i xv0 = _mm_loadu_si128((const __m128i*)(x0 + i));
+		__m128i xv1 = _mm_loadu_si128((const __m128i*)(x1 + i));
+		s00 = _mm_add_epi32(s00, _mm_madd_epi16(xv0, yv));
+		s10 = _mm_add_epi32(s10, _mm_madd_epi16(xv1, yv));
+	}
+	*d0 = psw_hsum_epi32_sse2(s00) >> scale_shift;
+	*d1 = psw_hsum_epi32_sse2(s10) >> scale_shift;
+}
+
 static inline void psw_fill_row_scores_sse(const int16_t *qp, const int16_t *tfi,
                                            int mpad, int8_t scale_shift,
                                            int st, int en, int32_t *sv)
 {
-	int j;
+	int j = st;
 	const int16_t *qpj = qp + (size_t)st * mpad;
-	for (j = st; j <= en; ++j, qpj += mpad)
-		sv[j - st] = psw_dot_scaled_sse_padded_i32(qpj, tfi, mpad, scale_shift);
+	int32_t *dst = sv;
+
+	for (; j + 1 <= en; j += 2, qpj += (size_t)2 * mpad, dst += 2)
+		psw_dot2_scaled_sse_padded_i32(qpj, qpj + mpad, tfi, mpad, scale_shift, &dst[0], &dst[1]);
+	if (j <= en)
+		dst[0] = psw_dot_scaled_sse_padded_i32(qpj, tfi, mpad, scale_shift);
 }
 
 static inline int psw_apply_zdrop_scaled(psw_extz_t *ez, int is_rot, int32_t H,
