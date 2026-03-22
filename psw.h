@@ -16,9 +16,11 @@
 #define PSW_CIGAR_MATCH  0
 #define PSW_CIGAR_INS    1
 #define PSW_CIGAR_DEL    2
+#define PSW_CIGAR_N_SKIP 3
+#define PSW_CIGAR_SOFTCLIP 4
+#define PSW_CIGAR_HARDCLIP 5
 #define PSW_CIGAR_EQ     7
 #define PSW_CIGAR_X      8
-#define PSW_CIGAR_N_SKIP 3
 
 #ifdef __cplusplus
 extern "C" {
@@ -145,6 +147,18 @@ float psw_gg3_sse_ps(void *km, int qlen, const uint8_t *query,
                      int8_t m, const int8_t *mat,
                      int8_t gapo, int8_t gape, int w,
                      int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
+	float psw_sw_pp(void *km, int qlen, const psw_prof_t *query,
+				 int tlen, const psw_prof_t *target,
+				 int8_t m, const int8_t *mat,
+				 int8_t gapo, int8_t gape, int w,
+				 int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
+	float psw_sw_ps(void *km, int qlen, const uint8_t *query,
+					 int tlen, const psw_prof_t *target,
+					 int8_t m, const int8_t *mat,
+					 int8_t gapo, int8_t gape, int w,
+					 int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
 
 #ifdef __cplusplus
 }

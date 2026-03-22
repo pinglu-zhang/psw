@@ -14,8 +14,8 @@ QUERY_FA="${QUERY_FA:-$PROJECT_ROOT/test/MT-orang.fa}"
 PROT_TARGET_FA="${PROT_TARGET_FA:-$PROJECT_ROOT/test/protein-perf-target.fa}"
 PROT_QUERY_FA="${PROT_QUERY_FA:-$PROJECT_ROOT/test/protein-perf-query.fa}"
 
-# MODES is space-separated; easy to extend later, e.g. MODES="gg_pp gg_ps extz_pp extz_ps extz_sse_pp extz_sse_ps"
-MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps gg3_pp gg3_ps gg3_sse_pp gg3_sse_ps extz_pp extz_ps extz_sse_pp extz_sse_ps}"
+# MODES is space-separated; easy to extend later, e.g. MODES="gg_pp gg_ps sw_pp sw_ps extz_pp extz_ps extz_sse_pp extz_sse_ps"
+MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps gg3_pp gg3_ps gg3_sse_pp gg3_sse_ps sw_pp sw_ps extz_pp extz_ps extz_sse_pp extz_sse_ps}"
 PROT_MODES_STR="${PROT_MODES:-$MODES_STR}"
 REPEAT="${REPEAT:-1}"
 BAND="${BAND:--1}"
@@ -29,7 +29,7 @@ Usage: bash run_perf.sh [options]
 Options:
   -w, --band INT         Band width passed to psw (-w). Default: -1
   -r, --repeat INT       Repeat count per mode. Default: 1
-  -m, --modes STR        Space-separated DNA modes, e.g. "gg_pp gg_ps"
+  -m, --modes STR        Space-separated DNA modes, e.g. "gg_pp gg_ps sw_pp sw_ps"
   --protein-modes STR    Space-separated protein modes (default follows --modes)
   --dna-only             Run only DNA benchmark
   --protein-only         Run only protein benchmark

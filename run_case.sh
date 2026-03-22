@@ -22,7 +22,7 @@ echo ""
 # 2. Helper: run one case and print a banner
 # --------------------------------------------------------------------------
 run_case() {
-    local mode="$1"     # gg_pp/gg_ps/gg2_pp/gg2_ps/gg3_pp/gg3_ps/gg3_sse_pp/gg3_sse_ps/extz_pp/extz_ps/extz_sse_pp/extz_sse_ps
+    local mode="$1"     # gg_pp/gg_ps/gg2_pp/gg2_ps/gg3_pp/gg3_ps/gg3_sse_pp/gg3_sse_ps/sw_pp/sw_ps/extz_pp/extz_ps/extz_sse_pp/extz_sse_ps
     local name="$2"     # case folder name under gg_pp/ or gg_ps/
     local target="$3"
     local query="$4"
@@ -174,6 +174,41 @@ for case_dir in "$CASE_DIR/gg_pp"/*/; do
     run_case "gg3_sse_pp" "$name" \
         "$case_dir/target_aln.fa" \
         "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 5. sw_pp cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  sw_pp cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_pp"/*/; do
+    name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "sw_pp" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 4. sw_ps cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  sw_ps cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_ps"/*/; do
+    name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "sw_ps" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$query_file" \
         "${extra_args[@]}"
 done
 

@@ -30,7 +30,7 @@ typedef struct {
 } alphabet_cfg_t;
 
 typedef struct {
-    const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp, extz_sse_ps */
+    const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, sw_pp, sw_ps, extz_pp, extz_ps, extz_sse_pp, extz_sse_ps */
     const char *seq_type; /* dna or protein */
     int8_t match;
     int8_t mismatch;
@@ -46,7 +46,7 @@ static void print_usage(const char *prog)
 {
     fprintf(stderr, "Usage: %s [options] <target.fasta> <query.fasta>\n", prog);
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps [gg_pp]\n");
+    fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, sw_pp, sw_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps [gg_pp]\n");
     fprintf(stderr, "  -S STR   sequence type: dna or protein [dna]\n");
     fprintf(stderr, "  -A INT   match score [5]\n");
     fprintf(stderr, "  -B INT   mismatch penalty (positive) [4]\n");
@@ -311,7 +311,7 @@ static char *consensus_from_profile(const uint32_t *prof, int len, const alphabe
 
 static void print_cigar(const uint32_t *cigar, int n_cigar)
 {
-    static const char op_table[] = { 'M', 'I', 'D', 'N', '?', '?', '?', '=', 'X' };
+    static const char op_table[] = { 'M', 'I', 'D', 'N', 'S', 'H', '?', '=', 'X' };
     int i;
     for (i = 0; i < n_cigar; ++i) {
         int op = (int)(cigar[i] & 0xfu);
@@ -332,6 +332,51 @@ static int cigar_alignment_len(const uint32_t *cigar, int n_cigar)
     return total;
 }
 
+static int cigar_has_clip(const uint32_t *cigar, int n_cigar)
+{
+    int i;
+    for (i = 0; i < n_cigar; ++i) {
+        int op = (int)(cigar[i] & 0xfu);
+        if (op == PSW_CIGAR_SOFTCLIP || op == PSW_CIGAR_HARDCLIP) return 1;
+    }
+    return 0;
+}
+
+static int guess_target_start_for_local(const char *query, const char *target, const uint32_t *cigar, int n_cigar)
+{
+    int qlen = (int)strlen(query), tlen = (int)strlen(target);
+    int i, best_t0 = 0, best_score = -0x3fffffff;
+
+    for (i = 0; i <= tlen; ++i) {
+        int q = 0, t = i;
+        int k, score = 0, ok = 1;
+        for (k = 0; k < n_cigar && ok; ++k) {
+            int op = (int)(cigar[k] & 0xfu);
+            int len = (int)(cigar[k] >> 4), x;
+            if (op == PSW_CIGAR_MATCH || op == PSW_CIGAR_EQ || op == PSW_CIGAR_X) {
+                for (x = 0; x < len; ++x) {
+                    if (q >= qlen || t >= tlen) { ok = 0; break; }
+                    score += query[q] == target[t] ? 2 : -1;
+                    ++q; ++t;
+                }
+            } else if (op == PSW_CIGAR_INS || op == PSW_CIGAR_SOFTCLIP) {
+                if (q + len > qlen) ok = 0;
+                q += len;
+                score -= len;
+            } else if (op == PSW_CIGAR_DEL || op == PSW_CIGAR_N_SKIP) {
+                if (t + len > tlen) ok = 0;
+                t += len;
+                score -= len;
+            }
+        }
+        if (ok && score > best_score) {
+            best_score = score;
+            best_t0 = i;
+        }
+    }
+    return best_t0;
+}
+
 static void print_alignment(const char *query, const char *target, const uint32_t *cigar, int n_cigar)
 {
     int i, k, qpos = 0, tpos = 0, apos = 0;
@@ -345,6 +390,9 @@ static void print_alignment(const char *query, const char *target, const uint32_
         printf("alignment allocation failed\n");
         return;
     }
+
+    if (cigar_has_clip(cigar, n_cigar))
+        tpos = guess_target_start_for_local(query, target, cigar, n_cigar);
 
     for (i = 0; i < n_cigar; ++i) {
         int op = (int)(cigar[i] & 0xfu);
@@ -365,6 +413,11 @@ static void print_alignment(const char *query, const char *target, const uint32_
                 at[apos] = target[tpos++];
                 am[apos] = ' ';
                 ++apos;
+            } else if (op == PSW_CIGAR_SOFTCLIP) {
+                /* Soft clip consumes query only, but is not part of the aligned display block. */
+                ++qpos;
+            } else if (op == PSW_CIGAR_HARDCLIP) {
+                /* Hard clip consumes neither query nor target; omitted in preview rows. */
             }
         }
     }
@@ -468,10 +521,11 @@ int main(int argc, char **argv)
         strcmp(opt.mode, "gg2_pp") != 0 && strcmp(opt.mode, "gg2_ps") != 0 &&
         strcmp(opt.mode, "gg3_pp") != 0 && strcmp(opt.mode, "gg3_ps") != 0 &&
         strcmp(opt.mode, "gg3_sse_pp") != 0 && strcmp(opt.mode, "gg3_sse_ps") != 0 &&
+        strcmp(opt.mode, "sw_pp") != 0 && strcmp(opt.mode, "sw_ps") != 0 &&
         strcmp(opt.mode, "extz_pp") != 0 && strcmp(opt.mode, "extz_ps") != 0 && strcmp(opt.mode, "extz") != 0 &&
         strcmp(opt.mode, "extz_sse_pp") != 0 && strcmp(opt.mode, "extz_sse_ps") != 0 && strcmp(opt.mode, "extz_sse") != 0 &&
         strcmp(opt.mode, "pp") != 0 && strcmp(opt.mode, "ps") != 0) {
-        fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps\n");
+        fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, sw_pp, sw_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps\n");
         free(mat);
         return 1;
     }
@@ -494,7 +548,7 @@ int main(int argc, char **argv)
 
     if (strcmp(opt.mode, "gg_pp") == 0 || strcmp(opt.mode, "pp") == 0 ||
         strcmp(opt.mode, "gg2_pp") == 0 || strcmp(opt.mode, "gg3_pp") == 0 ||
-        strcmp(opt.mode, "gg3_sse_pp") == 0 ||
+        strcmp(opt.mode, "gg3_sse_pp") == 0 || strcmp(opt.mode, "sw_pp") == 0 ||
         strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0 ||
         strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0) {
         uint32_t *target_prof = 0, *query_prof = 0;
@@ -529,6 +583,10 @@ int main(int argc, char **argv)
             score = psw_gg3_sse_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
                                    opt.gapo, opt.gape, opt.band,
                                    &m_cigar, &n_cigar, &cigar);
+        } else if (strcmp(opt.mode, "sw_pp") == 0) {
+            score = psw_sw_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
+                              opt.gapo, opt.gape, opt.band,
+                              &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0) {
             psw_reset_extz(&ez);
             psw_extz_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
@@ -555,8 +613,9 @@ int main(int argc, char **argv)
                strcmp(opt.mode, "gg2_pp") == 0 ? "gg2_pp" :
                (strcmp(opt.mode, "gg3_pp") == 0 ? "gg3_pp" :
                (strcmp(opt.mode, "gg3_sse_pp") == 0 ? "gg3_sse_pp" :
+               (strcmp(opt.mode, "sw_pp") == 0 ? "sw_pp" :
                ((strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0) ? "extz_pp" :
-               ((strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0) ? "extz_sse_pp" : "gg_pp")))),
+               ((strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0) ? "extz_sse_pp" : "gg_pp"))))),
                score);
         printf("seq_type=%s\n", strcmp(opt.seq_type, "prot") == 0 ? "protein" : opt.seq_type);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
@@ -612,6 +671,10 @@ int main(int argc, char **argv)
             score = psw_gg3_sse_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
                                    opt.gapo, opt.gape, opt.band,
                                    &m_cigar, &n_cigar, &cigar);
+        } else if (strcmp(opt.mode, "sw_ps") == 0) {
+            score = psw_sw_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
+                              opt.gapo, opt.gape, opt.band,
+                              &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "extz_ps") == 0) {
             psw_reset_extz(&ez);
             psw_extz_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
@@ -638,8 +701,9 @@ int main(int argc, char **argv)
                strcmp(opt.mode, "gg2_ps") == 0 ? "gg2_ps" :
                (strcmp(opt.mode, "gg3_ps") == 0 ? "gg3_ps" :
                (strcmp(opt.mode, "gg3_sse_ps") == 0 ? "gg3_sse_ps" :
+               (strcmp(opt.mode, "sw_ps") == 0 ? "sw_ps" :
                (strcmp(opt.mode, "extz_ps") == 0 ? "extz_ps" :
-               (strcmp(opt.mode, "extz_sse_ps") == 0 ? "extz_sse_ps" : "gg_ps")))),
+               (strcmp(opt.mode, "extz_sse_ps") == 0 ? "extz_sse_ps" : "gg_ps"))))),
                score);
         printf("seq_type=%s\n", strcmp(opt.seq_type, "prot") == 0 ? "protein" : opt.seq_type);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
