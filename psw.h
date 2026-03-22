@@ -59,10 +59,25 @@ typedef struct {
  * @param flag      flags (see PSW_FLAG_* macros)
  * @param ez        (out) scores and cigar
  */
-void psw_extz(void *km, int q_len, const psw_prof_t *query,
+void psw_extz_pp(void *km, int q_len, const psw_prof_t *query,
               int t_len, const psw_prof_t *target,
               int8_t m, const int8_t *mat,
               int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
+
+void psw_extz_ps(void *km, int qlen, const uint8_t *query,
+              int t_len, const psw_prof_t *target,
+              int8_t m, const int8_t *mat,
+              int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
+
+void psw_extz_sse_pp(void *km, int q_len, const psw_prof_t *query,
+                     int t_len, const psw_prof_t *target,
+                     int8_t m, const int8_t *mat,
+                     int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
+
+void psw_extz_sse_ps(void *km, int qlen, const uint8_t *query,
+                     int t_len, const psw_prof_t *target,
+                     int8_t m, const int8_t *mat,
+                     int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
 
 /**
  * Global alignment for profile-profile alignment
