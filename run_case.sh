@@ -22,7 +22,7 @@ echo ""
 # 2. Helper: run one case and print a banner
 # --------------------------------------------------------------------------
 run_case() {
-    local mode="$1"     # gg_pp or gg_ps
+    local mode="$1"     # gg_pp/gg_ps/gg2_pp/gg2_ps/gg3_pp/gg3_ps/gg3_sse_pp/gg3_sse_ps/sw_pp/sw_ps/extz_pp/extz_ps/extz_sse_pp/extz_sse_ps
     local name="$2"     # case folder name under gg_pp/ or gg_ps/
     local target="$3"
     local query="$4"
@@ -178,7 +178,76 @@ for case_dir in "$CASE_DIR/gg_pp"/*/; do
 done
 
 # --------------------------------------------------------------------------
-# 4. gg_ps cases
+# 5. sw_pp cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  sw_pp cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_pp"/*/; do
+    name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "sw_pp" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 4. sw_ps cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  sw_ps cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_ps"/*/; do
+    name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "sw_ps" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$query_file" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 5. extz_pp cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  extz_pp cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_pp"/*/; do
+    name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "extz_pp" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 6. extz_sse_pp cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  extz_sse_pp cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_pp"/*/; do
+    name="$(basename "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "extz_sse_pp" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$case_dir/query_aln.fa" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 7. gg3_sse_ps cases
 # --------------------------------------------------------------------------
 echo "================================================================"
 echo "  gg3_sse_ps cases"
@@ -190,6 +259,42 @@ for case_dir in "$CASE_DIR/gg_ps"/*/; do
     query_file="$(pick_query_file_ps "$case_dir")"
     extra_args=( $(case_extra_args "$name") )
     run_case "gg3_sse_ps" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$query_file" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 8. extz_ps cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  extz_ps cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_ps"/*/; do
+    name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "extz_ps" "$name" \
+        "$case_dir/target_aln.fa" \
+        "$query_file" \
+        "${extra_args[@]}"
+done
+
+# --------------------------------------------------------------------------
+# 9. extz_sse_ps cases
+# --------------------------------------------------------------------------
+echo "================================================================"
+echo "  extz_sse_ps cases"
+echo "================================================================"
+echo ""
+
+for case_dir in "$CASE_DIR/gg_ps"/*/; do
+    name="$(basename "$case_dir")"
+    query_file="$(pick_query_file_ps "$case_dir")"
+    extra_args=( $(case_extra_args "$name") )
+    run_case "extz_sse_ps" "$name" \
         "$case_dir/target_aln.fa" \
         "$query_file" \
         "${extra_args[@]}"

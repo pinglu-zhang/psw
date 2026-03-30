@@ -16,9 +16,11 @@
 #define PSW_CIGAR_MATCH  0
 #define PSW_CIGAR_INS    1
 #define PSW_CIGAR_DEL    2
+#define PSW_CIGAR_N_SKIP 3
+#define PSW_CIGAR_SOFTCLIP 4
+#define PSW_CIGAR_HARDCLIP 5
 #define PSW_CIGAR_EQ     7
 #define PSW_CIGAR_X      8
-#define PSW_CIGAR_N_SKIP 3
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,8 +40,8 @@ typedef struct {
 typedef struct {
 	int len;
 	int dim;
-	int depth;              /* profile 总序列数 */
-	const uint32_t *prof;   /* 每列 dim 个计数；前 m 个通常是 residue/base 计数 */
+	int depth;              /* total number of sequences in the profile */
+	const uint32_t *prof;   /* dim counts per column; the first m are usually residue/base counts */
 } psw_prof_t;
 
 /**
@@ -59,10 +61,25 @@ typedef struct {
  * @param flag      flags (see PSW_FLAG_* macros)
  * @param ez        (out) scores and cigar
  */
-void psw_extz(void *km, int q_len, const psw_prof_t *query,
+void psw_extz_pp(void *km, int q_len, const psw_prof_t *query,
               int t_len, const psw_prof_t *target,
               int8_t m, const int8_t *mat,
               int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
+
+void psw_extz_ps(void *km, int qlen, const uint8_t *query,
+              int t_len, const psw_prof_t *target,
+              int8_t m, const int8_t *mat,
+              int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
+
+void psw_extz_sse_pp(void *km, int q_len, const psw_prof_t *query,
+                     int t_len, const psw_prof_t *target,
+                     int8_t m, const int8_t *mat,
+                     int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
+
+void psw_extz_sse_ps(void *km, int qlen, const uint8_t *query,
+                     int t_len, const psw_prof_t *target,
+                     int8_t m, const int8_t *mat,
+                     int8_t q, int8_t e, int w, int zdrop, int flag, psw_extz_t *ez);
 
 /**
  * Global alignment for profile-profile alignment
@@ -130,6 +147,18 @@ float psw_gg3_sse_ps(void *km, int qlen, const uint8_t *query,
                      int8_t m, const int8_t *mat,
                      int8_t gapo, int8_t gape, int w,
                      int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
+	float psw_sw_pp(void *km, int qlen, const psw_prof_t *query,
+				 int tlen, const psw_prof_t *target,
+				 int8_t m, const int8_t *mat,
+				 int8_t gapo, int8_t gape, int w,
+				 int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
+
+	float psw_sw_ps(void *km, int qlen, const uint8_t *query,
+					 int tlen, const psw_prof_t *target,
+					 int8_t m, const int8_t *mat,
+					 int8_t gapo, int8_t gape, int w,
+					 int *m_cigar_, int *n_cigar_, uint32_t **cigar_);
 
 #ifdef __cplusplus
 }
@@ -239,7 +268,7 @@ static inline void psw_backtrack(void *km, int is_rot, int is_rev, int min_intro
 }
 
 /* convert MATCH cigar to EQ/X cigar */
-static inline void ksw_cigar2eqx(void *km,
+static inline void psw_cigar2eqx(void *km,
                                  const uint8_t *target, const uint8_t *query,
                                  int nc0, const uint32_t *ci0,
                                  int *mc1, int *nc1, uint32_t **ci1)

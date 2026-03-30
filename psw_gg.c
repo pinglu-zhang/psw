@@ -7,9 +7,9 @@
 typedef struct { float h, e; } eh_t;
 
 /*
- * psw.h 里直接复用了 ksw_backtrack()/ksw_push_cigar()，
- * 这些 helper 仍然使用 KSW_CIGAR_* 宏。
- * 这里做兼容映射，避免单独改头文件也能编译。
+ * psw.h directly reuses ksw_backtrack()/ksw_push_cigar().
+ * Those helpers still use KSW_CIGAR_* macros.
+ * Add compatibility mappings here so it builds without changing headers.
  */
 #ifndef KSW_CIGAR_MATCH
 #define KSW_CIGAR_MATCH PSW_CIGAR_MATCH
@@ -35,10 +35,10 @@ typedef struct { float h, e; } eh_t;
 #endif
 
 /*
- * 生成每列的 base frequency:
+ * Generate per-column base frequency:
  *   bf[col] = (sum of base counts in this column) / depth
  *
- * 假设 profile 每列前 m 个元素是 A/C/G/T/... 的计数，不含 gap。
+ * Assume the first m elements in each profile column are A/C/G/T/... counts (no gap).
  */
 static inline float *psw_gen_base_freq(void *km, int len, const psw_prof_t *p, int8_t m)
 {
@@ -63,12 +63,12 @@ static inline float *psw_gen_base_freq(void *km, int len, const psw_prof_t *p, i
 }
 
 /*
- * 预计算 query profile
+ * Precompute query profile
  *
- * 原始列打分:
+ * Original column score:
  *   S(i,j) = sum_a sum_b Q_j[a] * mat[a*m+b] * T_i[b]
  *
- * 预计算后:
+ * After precomputation:
  *   qp[b * qlen + j] = (sum_a Q_j[a] * mat[a*m+b]) / query_depth
  *   S(i,j) = (sum_b qp[b * qlen + j] * T_i[b]) / target_depth
  */
@@ -96,7 +96,7 @@ static inline float *psw_gen_qp(void *km, int qlen, const psw_prof_t *query, int
 }
 
 /*
- * 从预计算的 qp 与 target 第 i 列计算 profile-profile 列打分
+ * Compute profile-profile column score from precomputed qp and target column i.
  */
 static inline float psw_score_from_qp(const float *qp, int j,
                                       const psw_prof_t *target, int i, int8_t m,
@@ -377,8 +377,8 @@ float psw_gg_pp(void *km, int qlen, const psw_prof_t *query,
 
 				{
 					float h_open_f = h1 - (go_f + ge_f);
-					f -= ge_f;
-					f  = f > h_open_f ? f : h_open_f;
+				 f -= ge_f;
+				 f  = f > h_open_f ? f : h_open_f;
 				}
 			}
 		}
