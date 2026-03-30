@@ -40,8 +40,8 @@ typedef struct {
 typedef struct {
 	int len;
 	int dim;
-	int depth;              /* profile 总序列数 */
-	const uint32_t *prof;   /* 每列 dim 个计数；前 m 个通常是 residue/base 计数 */
+	int depth;              /* total number of sequences in the profile */
+	const uint32_t *prof;   /* dim counts per column; the first m are usually residue/base counts */
 } psw_prof_t;
 
 /**
