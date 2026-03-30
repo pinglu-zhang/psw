@@ -268,7 +268,7 @@ static inline void psw_backtrack(void *km, int is_rot, int is_rev, int min_intro
 }
 
 /* convert MATCH cigar to EQ/X cigar */
-static inline void ksw_cigar2eqx(void *km,
+static inline void psw_cigar2eqx(void *km,
                                  const uint8_t *target, const uint8_t *query,
                                  int nc0, const uint32_t *ci0,
                                  int *mc1, int *nc1, uint32_t **ci1)

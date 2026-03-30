@@ -18,7 +18,6 @@ add_executable(psw
     psw_gg2.c
     psw_gg3.c
     psw_gg3_sse.c
-    psw_sw.c
     psw_extz.c
     psw_extz_sse.c
 )
