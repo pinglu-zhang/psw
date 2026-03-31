@@ -5,7 +5,10 @@
 #define PSW_NEG_INF_F (-1e30f)
 #endif
 
-typedef struct { float u, v, x, y; } uvxy_t;
+typedef struct
+{
+	float u, v, x, y;
+} uvxy_t;
 
 static inline float *psw_gen_base_freq(void *km, int len, const psw_prof_t *p, int8_t m)
 {
@@ -13,18 +16,22 @@ static inline float *psw_gen_base_freq(void *km, int len, const psw_prof_t *p, i
 	float depth;
 	float *bf;
 
-	bf = (float*)kmalloc(km, (size_t)len * sizeof(float));
-	if (bf == 0) return 0;
+	bf = (float *)kmalloc(km, (size_t)len * sizeof(float));
+	if (bf == 0)
+		return 0;
 
 	depth = p->depth > 0 ? (float)p->depth : 1.0f;
-	for (i = 0; i < len; ++i) {
+	for (i = 0; i < len; ++i)
+	{
 		const uint32_t *col = p->prof + (size_t)i * p->dim;
 		float sum = 0.0f;
 		for (a = 0; a < m; ++a)
 			sum += (float)col[a];
 		bf[i] = sum / depth;
-		if (bf[i] < 0.0f) bf[i] = 0.0f;
-		if (bf[i] > 1.0f) bf[i] = 1.0f;
+		if (bf[i] < 0.0f)
+			bf[i] = 0.0f;
+		if (bf[i] > 1.0f)
+			bf[i] = 1.0f;
 	}
 	return bf;
 }
@@ -35,13 +42,16 @@ static inline float *psw_gen_qp(void *km, int qlen, const psw_prof_t *query, int
 	const float inv_depth = 1.0f / (query->depth > 0 ? (float)query->depth : 1.0f);
 	float *qp;
 
-	qp = (float*)kmalloc(km, (size_t)qlen * m * sizeof(float));
-	if (qp == 0) return 0;
+	qp = (float *)kmalloc(km, (size_t)qlen * m * sizeof(float));
+	if (qp == 0)
+		return 0;
 
-	for (j = 0; j < qlen; ++j) {
+	for (j = 0; j < qlen; ++j)
+	{
 		const uint32_t *qcol = query->prof + (size_t)j * query->dim;
 		float *dst = qp + (size_t)j * m;
-		for (b = 0; b < m; ++b) {
+		for (b = 0; b < m; ++b)
+		{
 			float s = 0.0f;
 			for (a = 0; a < m; ++a)
 				s += (float)qcol[a] * (float)mat[a * m + b];
@@ -55,10 +65,12 @@ static inline float *psw_gen_tf(void *km, int tlen, const psw_prof_t *target, in
 {
 	int i, b;
 	const float inv_depth = 1.0f / (target->depth > 0 ? (float)target->depth : 1.0f);
-	float *tf = (float*)kmalloc(km, (size_t)tlen * m * sizeof(float));
-	if (tf == 0) return 0;
+	float *tf = (float *)kmalloc(km, (size_t)tlen * m * sizeof(float));
+	if (tf == 0)
+		return 0;
 
-	for (i = 0; i < tlen; ++i) {
+	for (i = 0; i < tlen; ++i)
+	{
 		const uint32_t *tcol = target->prof + (size_t)i * target->dim;
 		float *dst = tf + (size_t)i * m;
 		for (b = 0; b < m; ++b)
@@ -68,18 +80,21 @@ static inline float *psw_gen_tf(void *km, int tlen, const psw_prof_t *target, in
 }
 
 static inline float *psw_gen_tp(void *km, int tlen, const psw_prof_t *target,
-                                int8_t m, const int8_t *mat)
+																int8_t m, const int8_t *mat)
 {
 	int a, b, i;
 	const float inv_depth = 1.0f / (target->depth > 0 ? (float)target->depth : 1.0f);
 	float *tp;
 
-	tp = (float*)kmalloc(km, (size_t)m * tlen * sizeof(float));
-	if (tp == 0) return 0;
+	tp = (float *)kmalloc(km, (size_t)m * tlen * sizeof(float));
+	if (tp == 0)
+		return 0;
 
-	for (i = 0; i < tlen; ++i) {
+	for (i = 0; i < tlen; ++i)
+	{
 		const uint32_t *tcol = target->prof + (size_t)i * target->dim;
-		for (a = 0; a < m; ++a) {
+		for (a = 0; a < m; ++a)
+		{
 			float s = 0.0f;
 			for (b = 0; b < m; ++b)
 				s += (float)mat[a * m + b] * (float)tcol[b];
@@ -109,15 +124,16 @@ static inline float psw_gap_only_query(const float *go_q, const float *ge_q, int
 
 static inline float psw_gap_only_query_scalar(float go_q, float ge_q, int qlen)
 {
-	if (qlen <= 0) return 0.0f;
+	if (qlen <= 0)
+		return 0.0f;
 	return -(go_q + qlen * ge_q);
 }
 
 float psw_gg2_pp(void *km, int qlen, const psw_prof_t *query,
-                 int tlen, const psw_prof_t *target,
-                 int8_t m, const int8_t *mat,
-                 int8_t gapo, int8_t gape, int w,
-                 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
+								 int tlen, const psw_prof_t *target,
+								 int8_t m, const int8_t *mat,
+								 int8_t gapo, int8_t gape, int w,
+								 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
 {
 	uvxy_t *a;
 	float *qp, *tf;
@@ -128,135 +144,211 @@ float psw_gg2_pp(void *km, int qlen, const psw_prof_t *query,
 	int32_t last_H0_t = 0;
 	uint8_t *z = 0;
 	const float fgapo = (float)gapo, fgape = (float)gape;
-	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
-	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
-	if (query->prof == 0 || target->prof == 0) return PSW_NEG_INF_F;
-	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
-	if (query->len < qlen || target->len < tlen) return PSW_NEG_INF_F;
-	if (query->dim < m || target->dim < m) return PSW_NEG_INF_F;
+	if (gapo < 0 || gape < 0)
+		return PSW_NEG_INF_F;
+	if (query == 0 || target == 0 || mat == 0)
+		return PSW_NEG_INF_F;
+	if (query->prof == 0 || target->prof == 0)
+		return PSW_NEG_INF_F;
+	if (qlen < 0 || tlen < 0 || m <= 0)
+		return PSW_NEG_INF_F;
+	if (query->len < qlen || target->len < tlen)
+		return PSW_NEG_INF_F;
+	if (query->dim < m || target->dim < m)
+		return PSW_NEG_INF_F;
 
-	if (w < 0) w = tlen > qlen ? tlen : qlen;
+	if (w < 0)
+		w = tlen > qlen ? tlen : qlen;
 	n_col = w + 1 < tlen ? w + 1 : tlen;
 
 	qp = psw_gen_qp(km, qlen, query, m, mat);
-	if (qp == 0) return PSW_NEG_INF_F;
+	if (qp == 0)
+		return PSW_NEG_INF_F;
 	tf = psw_gen_tf(km, tlen, target, m);
-	if (tf == 0) {
+	if (tf == 0)
+	{
 		kfree(km, qp);
 		return PSW_NEG_INF_F;
 	}
 	qbf = psw_gen_base_freq(km, qlen, query, m);
-	if (qbf == 0) {
-		kfree(km, qp); kfree(km, tf);
+	if (qbf == 0)
+	{
+		kfree(km, qp);
+		kfree(km, tf);
 		return PSW_NEG_INF_F;
 	}
 	tbf = psw_gen_base_freq(km, tlen, target, m);
-	if (tbf == 0) {
-		kfree(km, qp); kfree(km, tf); kfree(km, qbf);
+	if (tbf == 0)
+	{
+		kfree(km, qp);
+		kfree(km, tf);
+		kfree(km, qbf);
 		return PSW_NEG_INF_F;
 	}
 
-	go_q = (float*)kmalloc(km, (size_t)qlen * sizeof(float));
-	ge_q = (float*)kmalloc(km, (size_t)qlen * sizeof(float));
-	go_t = (float*)kmalloc(km, (size_t)tlen * sizeof(float));
-	ge_t = (float*)kmalloc(km, (size_t)tlen * sizeof(float));
-	a = (uvxy_t*)kcalloc(km, tlen + 1, sizeof(uvxy_t));
-	if (go_q == 0 || ge_q == 0 || go_t == 0 || ge_t == 0 || a == 0) {
-		if (go_q) kfree(km, go_q);
-		if (ge_q) kfree(km, ge_q);
-		if (go_t) kfree(km, go_t);
-		if (ge_t) kfree(km, ge_t);
-		if (a) kfree(km, a);
-		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+	go_q = (float *)kmalloc(km, (size_t)(qlen + 1) * sizeof(float));
+	ge_q = (float *)kmalloc(km, (size_t)(qlen + 1) * sizeof(float));
+	go_t = (float *)kmalloc(km, (size_t)(tlen + 1) * sizeof(float));
+	ge_t = (float *)kmalloc(km, (size_t)(tlen + 1) * sizeof(float));
+
+	a = (uvxy_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(uvxy_t));
+
+	if (go_q == 0 || ge_q == 0 || go_t == 0 || ge_t == 0 || a == 0)
+	{
+		if (go_q)
+			kfree(km, go_q);
+		if (ge_q)
+			kfree(km, ge_q);
+		if (go_t)
+			kfree(km, go_t);
+		if (ge_t)
+			kfree(km, ge_t);
+		if (a)
+			kfree(km, a);
+		kfree(km, qp);
+		kfree(km, tf);
+		kfree(km, qbf);
+		kfree(km, tbf);
 		return PSW_NEG_INF_F;
 	}
 
-	for (t = 0; t < qlen; ++t) {
+	for (t = 0; t < qlen; ++t)
+	{
 		go_q[t] = fgapo * qbf[t];
 		ge_q[t] = fgape * qbf[t];
 	}
-	for (t = 0; t < tlen; ++t) {
+	go_q[qlen] = fgapo, ge_q[qlen] = fgape;
+	for (t = 0; t < tlen; ++t)
+	{
 		go_t[t] = fgapo * tbf[t];
 		ge_t[t] = fgape * tbf[t];
 	}
+	go_t[tlen] = fgapo, ge_t[tlen] = fgape;
 
-	if (m_cigar_ && n_cigar_ && cigar_) {
+	// # init
+	for (t = 0; t <= tlen; ++t)
+	{
+		a[t].x = a[t].v = a[t].y = a[t].u = -(fgapo + fgape); // -INF
+	}
+
+	if (m_cigar_ && n_cigar_ && cigar_)
+	{
 		*n_cigar_ = 0;
-		z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
-		off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
-		if (z == 0 || off == 0) {
-			if (z) kfree(km, z);
-			if (off) kfree(km, off);
-			kfree(km, go_q); kfree(km, ge_q); kfree(km, go_t); kfree(km, ge_t);
+		z = (uint8_t *)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
+		off = (int32_t *)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
+		if (z == 0 || off == 0)
+		{
+			if (z)
+				kfree(km, z);
+			if (off)
+				kfree(km, off);
+			kfree(km, go_q);
+			kfree(km, ge_q);
+			kfree(km, go_t);
+			kfree(km, ge_t);
 			kfree(km, a);
-			kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+			kfree(km, qp);
+			kfree(km, tf);
+			kfree(km, qbf);
+			kfree(km, tbf);
 			return PSW_NEG_INF_F;
 		}
 	}
 
-	if (qlen == 0 || tlen == 0) {
+	if (qlen == 0 || tlen == 0)
+	{
 		score = qlen == 0 ? psw_gap_only_target(go_t, ge_t, tlen) : psw_gap_only_query(go_q, ge_q, qlen);
-		if (m_cigar_ && n_cigar_ && cigar_) {
+		if (m_cigar_ && n_cigar_ && cigar_)
+		{
 			*n_cigar_ = 0;
 			if (qlen == 0 && tlen > 0)
 				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_DEL, tlen);
 			else if (tlen == 0 && qlen > 0)
 				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_INS, qlen);
 		}
-		if (z) kfree(km, z);
-		if (off) kfree(km, off);
-		kfree(km, go_q); kfree(km, ge_q); kfree(km, go_t); kfree(km, ge_t);
+		if (z)
+			kfree(km, z);
+		if (off)
+			kfree(km, off);
+		kfree(km, go_q);
+		kfree(km, ge_q);
+		kfree(km, go_t);
+		kfree(km, ge_t);
 		kfree(km, a);
-		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+		kfree(km, qp);
+		kfree(km, tf);
+		kfree(km, qbf);
+		kfree(km, tbf);
 		return score;
 	}
 
-	for (r = 0; r < qlen + tlen - 1; ++r) {
+	for (r = 0; r < qlen + tlen - 1; ++r)
+	{
 		int32_t st = 0, en = tlen - 1;
 		float x1, v1;
 
-		if (st < r - qlen + 1) st = r - qlen + 1;
-		if (en > r) en = r;
-		if (st < (r - w + 1) >> 1) st = (r - w + 1) >> 1;
-		if (en > (r + w) >> 1) en = (r + w) >> 1;
-		if (st > en) continue;
+		if (st < r - qlen + 1)
+			st = r - qlen + 1;
+		if (en > r)
+			en = r;
+		if (st < (r - w + 1) >> 1)
+			st = (r - w + 1) >> 1;
+		if (en > (r + w) >> 1)
+			en = (r + w) >> 1;
+		if (st > en)
+			continue;
 
-		if (st != 0) {
-			if (r > st + st + w - 1) x1 = v1 = 0.0f;
-			else {
+		if (st != 0)
+		{
+			if (r > st + st + w - 1)
+				x1 = v1 = -(fgapo + fgape); // # x1 = v1 = -INF
+			else
+			{
 				x1 = a[st - 1].x;
 				v1 = a[st - 1].v;
 			}
-		} else {
-			x1 = 0.0f;
-			v1 = r ? go_q[r - 1] : 0.0f;
 		}
-		if (en != r) {
+		else
+		{
+			// top
+			x1 = -go_t[0] - ge_t[0];
+			v1 = r ? -ge_q[r - 0] : -go_q[r - 0] - ge_q[r - 0];
+		}
+		if (en != r)
+		{
 			if (r < en + en - w - 1)
-				a[en].y = a[en].u = 0.0f;
-		} else {
-			a[r].y = 0.0f;
-			a[r].u = r ? go_t[r - 1] : 0.0f;
+				a[en].y = a[en].u = -(fgapo + fgape); // # a[en].y = a[en].u] = -INF
+		}
+		else
+		{
+			// left i = r
+			a[r].y = -go_q[0] - ge_q[0];
+			a[r].u = r ? -ge_t[r] : -go_t[r] - ge_t[r];
 		}
 
-		if (z) {
+		if (z)
+		{
 			uint8_t *zr = z + (size_t)r * n_col;
 			off[r] = st;
-			for (t = st; t <= en; ++t) {
+			for (t = st; t <= en; ++t)
+			{
 				int32_t j = r - t;
 				const float *qpj = qp + (size_t)j * m;
 				const float *tfi = tf + (size_t)t * m;
 				float s = 0.0f, score0, ax, by;
 				float u1, z_after;
-				float q_open = go_t[t];
-				float t_open = go_q[j];
-				float bias = q_open + ge_t[t] + t_open + ge_q[j];
+				float t_open = go_t[t + 1];
+				float t_ext = ge_t[t + 1];
+				float q_open = go_q[j + 1];
+				float q_ext = ge_q[j + 1];
+				// float bias = q_open + ge_t[t] + t_open + ge_q[j];
 				uint8_t d;
 				int b;
 
-				for (b = 0; b < m; ++b) s += qpj[b] * tfi[b];
+				for (b = 0; b < m; ++b)
+					s += qpj[b] * tfi[b];
 
-				score0 = s + bias;
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				d = ax > score0 ? 1 : 0;
@@ -269,33 +361,42 @@ float psw_gg2_pp(void *km, int qlen, const psw_prof_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				z_after = score0 - q_open;
+				z_after = score0 - t_open; 
 				ax -= z_after;
 				x1 = a[t].x;
 				d |= ax > 0.0f ? 0x08 : 0;
 				a[t].x = ax > 0.0f ? ax : 0.0f;
+				a[t].x -= t_open + t_ext;
 
-				by -= (score0 - t_open);
+				by -= (score0 - q_open);
 				d |= by > 0.0f ? 0x10 : 0;
 				a[t].y = by > 0.0f ? by : 0.0f;
+				a[t].y -= q_open + q_ext;
 
 				zr[t - st] = d;
 			}
-		} else {
-			for (t = st; t <= en; ++t) {
+		}
+		else
+		{
+			for (t = st; t <= en; ++t)
+			{
 				int32_t j = r - t;
 				const float *qpj = qp + (size_t)j * m;
 				const float *tfi = tf + (size_t)t * m;
 				float s = 0.0f, score0, ax, by;
 				float u1;
-				float q_open = go_t[t];
-				float t_open = go_q[j];
-				float bias = q_open + ge_t[t] + t_open + ge_q[j];
+				float t_open = go_t[t + 1];
+				float t_ext = ge_t[t + 1];
+				float q_open = go_q[j + 1];
+				float q_ext = ge_q[j + 1];
+
+				// float bias = q_open + ge_t[t] + t_open + ge_q[j];
 				int b;
 
-				for (b = 0; b < m; ++b) s += qpj[b] * tfi[b];
+				for (b = 0; b < m; ++b)
+					s += qpj[b] * tfi[b];
 
-				score0 = s + bias;
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				score0 = ax > score0 ? ax : score0;
@@ -306,49 +407,66 @@ float psw_gg2_pp(void *km, int qlen, const psw_prof_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				ax -= (score0 - q_open);
+				ax -= (score0 - t_open);
 				x1 = a[t].x;
 				a[t].x = ax > 0.0f ? ax : 0.0f;
+				a[t].x -= t_open + t_ext;
 
-				by -= (score0 - t_open);
+				by -= (score0 - q_open);
 				a[t].y = by > 0.0f ? by : 0.0f;
+				a[t].y -= q_open + q_ext;
 			}
 		}
 
-		if (r > 0) {
-			if (last_H0_t >= st && last_H0_t <= en) {
+		if (r > 0)
+		{
+			if (last_H0_t >= st && last_H0_t <= en)
+			{
 				int32_t jh = r - last_H0_t;
-				H0 += a[last_H0_t].v - (go_q[jh] + ge_q[jh]);
-			} else {
-				++last_H0_t;
-				H0 += a[last_H0_t].u - (go_t[last_H0_t] + ge_t[last_H0_t]);
+				H0 += a[last_H0_t].v;
 			}
-		} else {
-			H0 = a[0].v - (go_t[0] + ge_t[0] + go_q[0] + ge_q[0]);
+			else
+			{
+				++last_H0_t;
+				H0 += a[last_H0_t].u;
+			}
+		}
+		else
+		{
+			H0 = a[0].v - (go_t[0] + ge_t[0]);
 			last_H0_t = 0;
 		}
 	}
 
 	score = H0;
 
-	if (z && off) {
+	if (z && off)
+	{
 		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1,
-		              m_cigar_, n_cigar_, cigar_);
+									m_cigar_, n_cigar_, cigar_);
 	}
 
-	if (z) kfree(km, z);
-	if (off) kfree(km, off);
-	kfree(km, go_q); kfree(km, ge_q); kfree(km, go_t); kfree(km, ge_t);
+	if (z)
+		kfree(km, z);
+	if (off)
+		kfree(km, off);
+	kfree(km, go_q);
+	kfree(km, ge_q);
+	kfree(km, go_t);
+	kfree(km, ge_t);
 	kfree(km, a);
-	kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
+	kfree(km, qp);
+	kfree(km, tf);
+	kfree(km, qbf);
+	kfree(km, tbf);
 	return score;
 }
 
 float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
-                 int tlen, const psw_prof_t *target,
-                 int8_t m, const int8_t *mat,
-                 int8_t gapo, int8_t gape, int w,
-                 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
+								 int tlen, const psw_prof_t *target,
+								 int8_t m, const int8_t *mat,
+								 int8_t gapo, int8_t gape, int w,
+								 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
 {
 	uvxy_t *a;
 	float *tp, *tbf;
@@ -359,113 +477,167 @@ float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
 	uint8_t *z = 0;
 	const float fgapo = (float)gapo, fgape = (float)gape;
 	const float go_q = (float)gapo, ge_q = (float)gape;
-	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
-	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
-	if (target->prof == 0) return PSW_NEG_INF_F;
-	if (qlen < 0 || tlen < 0 || m <= 0) return PSW_NEG_INF_F;
-	if (target->len < tlen || target->dim < m) return PSW_NEG_INF_F;
+	if (gapo < 0 || gape < 0)
+		return PSW_NEG_INF_F;
+	if (query == 0 || target == 0 || mat == 0)
+		return PSW_NEG_INF_F;
+	if (target->prof == 0)
+		return PSW_NEG_INF_F;
+	if (qlen < 0 || tlen < 0 || m <= 0)
+		return PSW_NEG_INF_F;
+	if (target->len < tlen || target->dim < m)
+		return PSW_NEG_INF_F;
 
 	for (t = 0; t < qlen; ++t)
-		if ((int)query[t] < 0 || (int)query[t] >= m) return PSW_NEG_INF_F;
+		if ((int)query[t] < 0 || (int)query[t] >= m)
+			return PSW_NEG_INF_F;
 
-	if (w < 0) w = tlen > qlen ? tlen : qlen;
+	if (w < 0)
+		w = tlen > qlen ? tlen : qlen;
 	n_col = w + 1 < tlen ? w + 1 : tlen;
 
 	tp = psw_gen_tp(km, tlen, target, m, mat);
-	if (tp == 0) return PSW_NEG_INF_F;
+	if (tp == 0)
+		return PSW_NEG_INF_F;
 	tbf = psw_gen_base_freq(km, tlen, target, m);
-	if (tbf == 0) {
+	if (tbf == 0)
+	{
 		kfree(km, tp);
 		return PSW_NEG_INF_F;
 	}
-	go_t = (float*)kmalloc(km, (size_t)tlen * sizeof(float));
-	ge_t = (float*)kmalloc(km, (size_t)tlen * sizeof(float));
-	a = (uvxy_t*)kcalloc(km, tlen + 1, sizeof(uvxy_t));
-	if (go_t == 0 || ge_t == 0 || a == 0) {
-		if (go_t) kfree(km, go_t);
-		if (ge_t) kfree(km, ge_t);
-		if (a) kfree(km, a);
-		kfree(km, tp); kfree(km, tbf);
+	go_t = (float *)kmalloc(km, (size_t)(tlen + 1) * sizeof(float));
+	ge_t = (float *)kmalloc(km, (size_t)(tlen + 1) * sizeof(float));
+	a = (uvxy_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(uvxy_t));
+
+	if (go_t == 0 || ge_t == 0 || a == 0)
+	{
+		if (go_t)
+			kfree(km, go_t);
+		if (ge_t)
+			kfree(km, ge_t);
+		if (a)
+			kfree(km, a);
+		kfree(km, tp);
+		kfree(km, tbf);
 		return PSW_NEG_INF_F;
 	}
-	for (t = 0; t < tlen; ++t) {
+	for (t = 0; t < tlen; ++t)
+	{
 		go_t[t] = fgapo * tbf[t];
 		ge_t[t] = fgape * tbf[t];
 	}
+	go_t[tlen] = fgapo, ge_t[tlen] = fgape;
+	// # init
+	for (t = 0; t <= tlen; ++t)
+	{
+		a[t].x = a[t].v = a[t].y = a[t].u = -(fgapo + fgape);
+	}
 
-	if (m_cigar_ && n_cigar_ && cigar_) {
+	if (m_cigar_ && n_cigar_ && cigar_)
+	{
 		*n_cigar_ = 0;
-		z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
-		off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
-		if (z == 0 || off == 0) {
-			if (z) kfree(km, z);
-			if (off) kfree(km, off);
-			kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
-			kfree(km, tp); kfree(km, tbf);
+		z = (uint8_t *)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
+		off = (int32_t *)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
+		if (z == 0 || off == 0)
+		{
+			if (z)
+				kfree(km, z);
+			if (off)
+				kfree(km, off);
+			kfree(km, go_t);
+			kfree(km, ge_t);
+			kfree(km, a);
+			kfree(km, tp);
+			kfree(km, tbf);
 			return PSW_NEG_INF_F;
 		}
 	}
 
-	if (qlen == 0 || tlen == 0) {
+	if (qlen == 0 || tlen == 0)
+	{
 		score = qlen == 0 ? psw_gap_only_target(go_t, ge_t, tlen) : psw_gap_only_query_scalar(go_q, ge_q, qlen);
-		if (m_cigar_ && n_cigar_ && cigar_) {
+		if (m_cigar_ && n_cigar_ && cigar_)
+		{
 			*n_cigar_ = 0;
 			if (qlen == 0 && tlen > 0)
 				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_DEL, tlen);
 			else if (tlen == 0 && qlen > 0)
 				*cigar_ = psw_push_cigar(km, n_cigar_, m_cigar_, *cigar_, PSW_CIGAR_INS, qlen);
 		}
-		if (z) kfree(km, z);
-		if (off) kfree(km, off);
-		kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
-		kfree(km, tp); kfree(km, tbf);
+		if (z)
+			kfree(km, z);
+		if (off)
+			kfree(km, off);
+		kfree(km, go_t);
+		kfree(km, ge_t);
+		kfree(km, a);
+		kfree(km, tp);
+		kfree(km, tbf);
 		return score;
 	}
 
-	for (r = 0; r < qlen + tlen - 1; ++r) {
+	for (r = 0; r < qlen + tlen - 1; ++r)
+	{
 		int32_t st = 0, en = tlen - 1;
 		float x1, v1;
 
-		if (st < r - qlen + 1) st = r - qlen + 1;
-		if (en > r) en = r;
-		if (st < (r - w + 1) >> 1) st = (r - w + 1) >> 1;
-		if (en > (r + w) >> 1) en = (r + w) >> 1;
-		if (st > en) continue;
+		if (st < r - qlen + 1)
+			st = r - qlen + 1;
+		if (en > r)
+			en = r;
+		if (st < (r - w + 1) >> 1)
+			st = (r - w + 1) >> 1;
+		if (en > (r + w) >> 1)
+			en = (r + w) >> 1;
+		if (st > en)
+			continue;
 
-		if (st != 0) {
-			if (r > st + st + w - 1) x1 = v1 = 0.0f;
-			else {
+		if (st != 0)
+		{
+			if (r > st + st + w - 1)
+				x1 = v1 = -(fgapo + fgape);
+			else
+			{
 				x1 = a[st - 1].x;
 				v1 = a[st - 1].v;
 			}
-		} else {
-			x1 = 0.0f;
-			v1 = r ? go_q : 0.0f;
 		}
-		if (en != r) {
+		else
+		{
+			x1 = -go_t[0] - ge_t[0];
+			v1 = r ? -ge_q : -go_q - ge_q;
+		}
+		if (en != r)
+		{
 			if (r < en + en - w - 1)
-				a[en].y = a[en].u = 0.0f;
-		} else {
-			a[r].y = 0.0f;
-			a[r].u = r ? go_t[r - 1] : 0.0f;
+				a[en].y = a[en].u = -(fgapo + fgape);
+		}
+		else
+		{
+			a[r].y = -go_q - ge_q;
+			a[r].u = r ? -ge_t[r] : -go_t[r] - ge_t[r];
 		}
 
-		if (z) {
+		if (z)
+		{
 			uint8_t *zr = z + (size_t)r * n_col;
 			off[r] = st;
-			for (t = st; t <= en; ++t) {
+			for (t = st; t <= en; ++t)
+			{
 				int32_t j = r - t;
 				int aidx = (int)query[j];
 				float s = tp[(size_t)aidx * tlen + t];
 				float score0, ax, by;
-				float u1, q_open, t_open;
-				float bias;
+				float u1, q_open, q_ext, t_open, t_ext;
+				// float bias;
 				uint8_t d;
 
-				q_open = go_t[t];
-				t_open = go_q;
-				bias = q_open + ge_t[t] + t_open + ge_q;
-				score0 = s + bias;
+				t_open = go_t[t + 1];
+				t_ext = ge_t[t + 1];
+				q_open = go_q;
+				q_ext = ge_q;
+				// bias = q_open + ge_t[t] + t_open + ge_q;
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				d = ax > score0 ? 1 : 0;
@@ -478,30 +650,38 @@ float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				ax -= (score0 - q_open);
+				ax -= (score0 - t_open);
 				x1 = a[t].x;
 				d |= ax > 0.0f ? 0x08 : 0;
 				a[t].x = ax > 0.0f ? ax : 0.0f;
+				a[t].x -= t_open + t_ext;
 
-				by -= (score0 - t_open);
+				by -= (score0 - q_open);
 				d |= by > 0.0f ? 0x10 : 0;
 				a[t].y = by > 0.0f ? by : 0.0f;
+				a[t].y -= q_open + q_ext;
 
 				zr[t - st] = d;
 			}
-		} else {
-			for (t = st; t <= en; ++t) {
+		}
+		else
+		{
+			for (t = st; t <= en; ++t)
+			{
 				int32_t j = r - t;
 				int aidx = (int)query[j];
 				float s = tp[(size_t)aidx * tlen + t];
 				float score0, ax, by;
-				float u1, q_open, t_open;
-				float bias;
+				float u1, q_open, q_ext, t_open, t_ext;
+				// float bias;
 
-				q_open = go_t[t];
-				t_open = go_q;
-				bias = q_open + ge_t[t] + t_open + ge_q;
-				score0 = s + bias;
+				t_open = go_t[t + 1];
+				t_ext = ge_t[t + 1];
+				q_open = go_q;
+				q_ext = ge_q;
+
+				// bias = q_open + ge_t[t] + t_open + ge_q;
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				score0 = ax > score0 ? ax : score0;
@@ -512,40 +692,50 @@ float psw_gg2_ps(void *km, int qlen, const uint8_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				ax -= (score0 - q_open);
+				ax -= (score0 - t_open);
 				x1 = a[t].x;
 				a[t].x = ax > 0.0f ? ax : 0.0f;
+				a[t].x -= t_open + t_ext;
 
-				by -= (score0 - t_open);
+				by -= (score0 - q_open);
 				a[t].y = by > 0.0f ? by : 0.0f;
+				a[t].y -= q_open + q_ext;
 			}
 		}
 
-		if (r > 0) {
+		if (r > 0)
+		{
 			if (last_H0_t >= st && last_H0_t <= en)
-				H0 += a[last_H0_t].v - (go_q + ge_q);
-			else {
+				H0 += a[last_H0_t].v;
+			else
+			{
 				++last_H0_t;
-				H0 += a[last_H0_t].u - (go_t[last_H0_t] + ge_t[last_H0_t]);
+				H0 += a[last_H0_t].u;
 			}
-		} else {
-			H0 = a[0].v - (go_t[0] + ge_t[0] + go_q + ge_q);
+		}
+		else
+		{
+			H0 = a[0].v - (go_t[0] + ge_t[0]);
 			last_H0_t = 0;
 		}
 	}
 
 	score = H0;
 
-	if (z && off) {
+	if (z && off)
+	{
 		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1,
-		              m_cigar_, n_cigar_, cigar_);
+									m_cigar_, n_cigar_, cigar_);
 	}
 
-	if (z) kfree(km, z);
-	if (off) kfree(km, off);
-	kfree(km, go_t); kfree(km, ge_t); kfree(km, a);
-	kfree(km, tp); kfree(km, tbf);
+	if (z)
+		kfree(km, z);
+	if (off)
+		kfree(km, off);
+	kfree(km, go_t);
+	kfree(km, ge_t);
+	kfree(km, a);
+	kfree(km, tp);
+	kfree(km, tbf);
 	return score;
 }
-
-
