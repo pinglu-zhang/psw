@@ -177,40 +177,6 @@ for case_dir in "$CASE_DIR/gg_pp"/*/; do
         "${extra_args[@]}"
 done
 
-# --------------------------------------------------------------------------
-# 5. sw_pp cases
-# --------------------------------------------------------------------------
-echo "================================================================"
-echo "  sw_pp cases"
-echo "================================================================"
-echo ""
-
-for case_dir in "$CASE_DIR/gg_pp"/*/; do
-    name="$(basename "$case_dir")"
-    extra_args=( $(case_extra_args "$name") )
-    run_case "sw_pp" "$name" \
-        "$case_dir/target_aln.fa" \
-        "$case_dir/query_aln.fa" \
-        "${extra_args[@]}"
-done
-
-# --------------------------------------------------------------------------
-# 4. sw_ps cases
-# --------------------------------------------------------------------------
-echo "================================================================"
-echo "  sw_ps cases"
-echo "================================================================"
-echo ""
-
-for case_dir in "$CASE_DIR/gg_ps"/*/; do
-    name="$(basename "$case_dir")"
-    query_file="$(pick_query_file_ps "$case_dir")"
-    extra_args=( $(case_extra_args "$name") )
-    run_case "sw_ps" "$name" \
-        "$case_dir/target_aln.fa" \
-        "$query_file" \
-        "${extra_args[@]}"
-done
 
 # --------------------------------------------------------------------------
 # 5. extz_pp cases

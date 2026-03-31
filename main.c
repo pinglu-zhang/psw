@@ -30,7 +30,7 @@ typedef struct {
 } alphabet_cfg_t;
 
 typedef struct {
-    const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, sw_pp, sw_ps, extz_pp, extz_ps, extz_sse_pp, extz_sse_ps */
+    const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp, extz_sse_ps */
     const char *seq_type; /* dna or protein */
     int8_t match;
     int8_t mismatch;
@@ -46,7 +46,7 @@ static void print_usage(const char *prog)
 {
     fprintf(stderr, "Usage: %s [options] <target.fasta> <query.fasta>\n", prog);
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, sw_pp, sw_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps [gg_pp]\n");
+    fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps [gg_pp]\n");
     fprintf(stderr, "  -S STR   sequence type: dna or protein [dna]\n");
     fprintf(stderr, "  -A INT   match score [5]\n");
     fprintf(stderr, "  -B INT   mismatch penalty (positive) [4]\n");
@@ -521,11 +521,10 @@ int main(int argc, char **argv)
         strcmp(opt.mode, "gg2_pp") != 0 && strcmp(opt.mode, "gg2_ps") != 0 &&
         strcmp(opt.mode, "gg3_pp") != 0 && strcmp(opt.mode, "gg3_ps") != 0 &&
         strcmp(opt.mode, "gg3_sse_pp") != 0 && strcmp(opt.mode, "gg3_sse_ps") != 0 &&
-        strcmp(opt.mode, "sw_pp") != 0 && strcmp(opt.mode, "sw_ps") != 0 &&
         strcmp(opt.mode, "extz_pp") != 0 && strcmp(opt.mode, "extz_ps") != 0 && strcmp(opt.mode, "extz") != 0 &&
         strcmp(opt.mode, "extz_sse_pp") != 0 && strcmp(opt.mode, "extz_sse_ps") != 0 && strcmp(opt.mode, "extz_sse") != 0 &&
         strcmp(opt.mode, "pp") != 0 && strcmp(opt.mode, "ps") != 0) {
-        fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, sw_pp, sw_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps\n");
+        fprintf(stderr, "ERROR: -t must be gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps\n");
         free(mat);
         return 1;
     }
@@ -548,7 +547,7 @@ int main(int argc, char **argv)
 
     if (strcmp(opt.mode, "gg_pp") == 0 || strcmp(opt.mode, "pp") == 0 ||
         strcmp(opt.mode, "gg2_pp") == 0 || strcmp(opt.mode, "gg3_pp") == 0 ||
-        strcmp(opt.mode, "gg3_sse_pp") == 0 || strcmp(opt.mode, "sw_pp") == 0 ||
+        strcmp(opt.mode, "gg3_sse_pp") == 0 ||
         strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0 ||
         strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0) {
         uint32_t *target_prof = 0, *query_prof = 0;
@@ -583,10 +582,6 @@ int main(int argc, char **argv)
             score = psw_gg3_sse_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
                                    opt.gapo, opt.gape, opt.band,
                                    &m_cigar, &n_cigar, &cigar);
-        } else if (strcmp(opt.mode, "sw_pp") == 0) {
-            score = psw_sw_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
-                              opt.gapo, opt.gape, opt.band,
-                              &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0) {
             psw_reset_extz(&ez);
             psw_extz_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
@@ -609,14 +604,23 @@ int main(int argc, char **argv)
                               &m_cigar, &n_cigar, &cigar);
         }
 
-        printf("mode=%s score=%.2f\n",
-               strcmp(opt.mode, "gg2_pp") == 0 ? "gg2_pp" :
-               (strcmp(opt.mode, "gg3_pp") == 0 ? "gg3_pp" :
-               (strcmp(opt.mode, "gg3_sse_pp") == 0 ? "gg3_sse_pp" :
-               (strcmp(opt.mode, "sw_pp") == 0 ? "sw_pp" :
-               ((strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0) ? "extz_pp" :
-               ((strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0) ? "extz_sse_pp" : "gg_pp"))))),
-               score);
+        const char *mode_str;
+
+        if (strcmp(opt.mode, "gg2_pp") == 0)
+            mode_str = "gg2_pp";
+        else if (strcmp(opt.mode, "gg3_pp") == 0)
+            mode_str = "gg3_pp";
+        else if (strcmp(opt.mode, "gg3_sse_pp") == 0)
+            mode_str = "gg3_sse_pp";
+        else if (strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0)
+            mode_str = "extz_pp";
+        else if (strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0)
+            mode_str = "extz_sse_pp";
+        else
+            mode_str = "gg_pp";
+
+        printf("mode=%s score=%.2f\n", mode_str, score);
+
         printf("seq_type=%s\n", strcmp(opt.seq_type, "prot") == 0 ? "protein" : opt.seq_type);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
         printf("query =%s (n_seq=%d, len=%d)\n", opt.query_path, qdepth, qlen);
@@ -671,10 +675,6 @@ int main(int argc, char **argv)
             score = psw_gg3_sse_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
                                    opt.gapo, opt.gape, opt.band,
                                    &m_cigar, &n_cigar, &cigar);
-        } else if (strcmp(opt.mode, "sw_ps") == 0) {
-            score = psw_sw_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
-                              opt.gapo, opt.gape, opt.band,
-                              &m_cigar, &n_cigar, &cigar);
         } else if (strcmp(opt.mode, "extz_ps") == 0) {
             psw_reset_extz(&ez);
             psw_extz_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
@@ -701,9 +701,8 @@ int main(int argc, char **argv)
                strcmp(opt.mode, "gg2_ps") == 0 ? "gg2_ps" :
                (strcmp(opt.mode, "gg3_ps") == 0 ? "gg3_ps" :
                (strcmp(opt.mode, "gg3_sse_ps") == 0 ? "gg3_sse_ps" :
-               (strcmp(opt.mode, "sw_ps") == 0 ? "sw_ps" :
                (strcmp(opt.mode, "extz_ps") == 0 ? "extz_ps" :
-               (strcmp(opt.mode, "extz_sse_ps") == 0 ? "extz_sse_ps" : "gg_ps"))))),
+               (strcmp(opt.mode, "extz_sse_ps") == 0 ? "extz_sse_ps" : "gg_ps")))),
                score);
         printf("seq_type=%s\n", strcmp(opt.seq_type, "prot") == 0 ? "protein" : opt.seq_type);
         printf("target=%s (n_seq=%d, len=%d)\n", opt.target_path, tdepth, tlen);
