@@ -79,7 +79,7 @@ static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t
 	if (src == 0 || dst == 0 || src->prof == 0 || src->len < 0 || src->dim <= 0 || m <= 0 || scale <= 0) return 0;
 	if (src->dim < m) return 0;
 
-	prof = (uint32_t*)kmalloc(km, (size_t)src->len * src->dim * sizeof(uint32_t));
+	prof = (uint32_t *)kmalloc(km, (size_t)src->len * src->dim * sizeof(uint32_t));
 	if (prof == 0) return 0;
 
 	depth = src->depth > 0 ? (int32_t)src->depth : 1;
@@ -92,7 +92,8 @@ static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t
 				if (v < 0) v = 0;
 				if (v > scale) v = scale;
 				out[a] = (uint32_t)v;
-			} else out[a] = in[a];
+			}
+			else out[a] = in[a];
 		}
 	}
 
@@ -106,7 +107,7 @@ static inline int psw_make_norm_prof(void *km, const psw_prof_t *src, psw_prof_t
 static inline void psw_free_norm_prof(void *km, psw_prof_t *p)
 {
 	if (p && p->prof) {
-		kfree(km, (void*)p->prof);
+		kfree(km, (void *)p->prof);
 		p->prof = 0;
 	}
 }
@@ -143,7 +144,7 @@ static inline int16_t *psw_gen_base_freq_i16(void *km, int len, const psw_prof_t
 	int i, a;
 	int16_t *bf;
 
-	bf = (int16_t*)kmalloc(km, (size_t)len * sizeof(int16_t));
+	bf = (int16_t *)kmalloc(km, (size_t)len * sizeof(int16_t));
 	if (bf == 0) return 0;
 
 	for (i = 0; i < len; ++i) {
@@ -163,7 +164,7 @@ static inline int16_t *psw_gen_qp_i16(void *km, int qlen, const psw_prof_t *quer
 	int a, b, j;
 	int16_t *qp;
 
-	qp = (int16_t*)kmalloc(km, (size_t)qlen * m * sizeof(int16_t));
+	qp = (int16_t *)kmalloc(km, (size_t)qlen * m * sizeof(int16_t));
 	if (qp == 0) return 0;
 
 	for (j = 0; j < qlen; ++j) {
@@ -182,7 +183,7 @@ static inline int16_t *psw_gen_qp_i16(void *km, int qlen, const psw_prof_t *quer
 static inline int16_t *psw_gen_tf_i16(void *km, int tlen, const psw_prof_t *target, int8_t m)
 {
 	int i, b;
-	int16_t *tf = (int16_t*)kmalloc(km, (size_t)tlen * m * sizeof(int16_t));
+	int16_t *tf = (int16_t *)kmalloc(km, (size_t)tlen * m * sizeof(int16_t));
 	if (tf == 0) return 0;
 
 	for (i = 0; i < tlen; ++i) {
@@ -195,12 +196,12 @@ static inline int16_t *psw_gen_tf_i16(void *km, int tlen, const psw_prof_t *targ
 }
 
 static inline int16_t *psw_gen_tp_i16(void *km, int tlen, const psw_prof_t *target,
-                                      int8_t m, const int8_t *mat)
+																			int8_t m, const int8_t *mat)
 {
 	int a, b, i;
 	int16_t *tp;
 
-	tp = (int16_t*)kmalloc(km, (size_t)m * tlen * sizeof(int16_t));
+	tp = (int16_t *)kmalloc(km, (size_t)m * tlen * sizeof(int16_t));
 	if (tp == 0) return 0;
 
 	for (i = 0; i < tlen; ++i) {
@@ -240,17 +241,17 @@ static inline int32_t psw_gap_only_query_scalar_i16(int16_t go_q, int16_t ge_q, 
 }
 
 float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
-                 int tlen, const psw_prof_t *target,
-                 int8_t m, const int8_t *mat,
-                 int8_t gapo, int8_t gape, int w,
-                 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
+								 int tlen, const psw_prof_t *target,
+								 int8_t m, const int8_t *mat,
+								 int8_t gapo, int8_t gape, int w,
+								 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
 {
 	uvxy16_t *a;
 	int16_t *qp, *tf;
 	int16_t *qbf, *tbf;
 	int16_t *go_q, *ge_q, *go_t, *ge_t;
-	int16_t *go_ge_q, *go_ge_t;
-	psw_prof_t query_n = {0, 0, 0, 0}, target_n = {0, 0, 0, 0};
+	// int16_t *go_ge_q, *go_ge_t;
+	psw_prof_t query_n = { 0, 0, 0, 0 }, target_n = { 0, 0, 0, 0 };
 	const psw_prof_t *q_use, *t_use;
 	int32_t r, t, n_col, *off = 0;
 	int32_t H0 = 0;
@@ -258,6 +259,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 	uint8_t *z = 0;
 	int16_t scale;
 	int8_t scale_shift;
+	int16_t igapo, igape;
 
 	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
@@ -304,46 +306,54 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		return PSW_NEG_INF_F;
 	}
 
-	go_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
-	ge_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
-	go_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	go_ge_q = (int16_t*)kmalloc(km, (size_t)qlen * sizeof(int16_t));
-	go_ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	a = (uvxy16_t*)kcalloc(km, tlen + 1, sizeof(uvxy16_t));
-	if (go_q == 0 || ge_q == 0 || go_t == 0 || ge_t == 0 || go_ge_q == 0 || go_ge_t == 0 || a == 0) {
+	go_q = (int16_t *)kmalloc(km, (size_t)(qlen + 1) * sizeof(int16_t));
+	ge_q = (int16_t *)kmalloc(km, (size_t)(qlen + 1) * sizeof(int16_t));
+	go_t = (int16_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(int16_t));
+	ge_t = (int16_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(int16_t));
+	// go_ge_q = (int16_t *)kmalloc(km, (size_t)(qlen + 1) * sizeof(int16_t));
+	// go_ge_t = (int16_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(int16_t));
+
+	a = (uvxy16_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(uvxy16_t));
+	if (go_q == 0 || ge_q == 0 || go_t == 0 || ge_t == 0 || a == 0) {
 		if (go_q) kfree(km, go_q);
 		if (ge_q) kfree(km, ge_q);
 		if (go_t) kfree(km, go_t);
 		if (ge_t) kfree(km, ge_t);
-		if (go_ge_q) kfree(km, go_ge_q);
-		if (go_ge_t) kfree(km, go_ge_t);
+		// if (go_ge_q) kfree(km, go_ge_q);
+		// if (go_ge_t) kfree(km, go_ge_t);
 		if (a) kfree(km, a);
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
-
+	igapo = psw_sat16((int32_t)gapo * scale);
+	igape = psw_sat16((int32_t)gape * scale);
 	for (t = 0; t < qlen; ++t) {
 		go_q[t] = psw_sat16((int32_t)gapo * qbf[t]);
 		ge_q[t] = psw_sat16((int32_t)gape * qbf[t]);
-		go_ge_q[t] = (int16_t)(go_q[t] + ge_q[t]);
+		// go_ge_q[t] = (int16_t)(go_q[t] + ge_q[t]);
 	}
+	go_q[qlen] = igapo, ge_q[qlen] = igape;
 	for (t = 0; t < tlen; ++t) {
 		go_t[t] = psw_sat16((int32_t)gapo * tbf[t]);
 		ge_t[t] = psw_sat16((int32_t)gape * tbf[t]);
-		go_ge_t[t] = (int16_t)(go_t[t] + ge_t[t]);
+		// go_ge_t[t] = (int16_t)(go_t[t] + ge_t[t]);
+	}
+	go_t[tlen] = igapo, ge_t[tlen]  = igape;
+
+	for (t = 0; t <= tlen; ++t) {
+		a[t].x = a[t].v = a[t].y = a[t].u = -(igapo + igape);
 	}
 
 	if (m_cigar_ && n_cigar_ && cigar_) {
 		*n_cigar_ = 0;
-		z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
-		off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
+		z = (uint8_t *)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
+		off = (int32_t *)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
 		if (z == 0 || off == 0) {
 			if (z) kfree(km, z);
 			if (off) kfree(km, off);
 			kfree(km, go_q); kfree(km, ge_q); kfree(km, go_t); kfree(km, ge_t);
-			kfree(km, go_ge_q); kfree(km, go_ge_t);
+			// kfree(km, go_ge_q); kfree(km, go_ge_t);
 			kfree(km, a);
 			kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 			psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
@@ -353,7 +363,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 
 	if (qlen == 0 || tlen == 0) {
 		int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
-		                       : psw_gap_only_query_i16(go_q, ge_q, qlen);
+			: psw_gap_only_query_i16(go_q, ge_q, qlen);
 		if (m_cigar_ && n_cigar_ && cigar_) {
 			*n_cigar_ = 0;
 			if (qlen == 0 && tlen > 0)
@@ -364,7 +374,7 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		if (z) kfree(km, z);
 		if (off) kfree(km, off);
 		kfree(km, go_q); kfree(km, ge_q); kfree(km, go_t); kfree(km, ge_t);
-		kfree(km, go_ge_q); kfree(km, go_ge_t);
+		// kfree(km, go_ge_q); kfree(km, go_ge_t);
 		kfree(km, a);
 		kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 		psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
@@ -382,21 +392,23 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 		if (st > en) continue;
 
 		if (st != 0) {
-			if (r > st + st + w - 1) x1 = v1 = 0;
+			if (r > st + st + w - 1) x1 = v1 = -(igapo + igape);
 			else {
 				x1 = a[st - 1].x;
 				v1 = a[st - 1].v;
 			}
-		} else {
-			x1 = 0;
-			v1 = r ? go_q[r - 1] : 0;
+		}
+		else {
+			x1 = -go_t[0] - ge_t[0];
+			v1 = r ? -ge_q[r - 0] : -go_q[r - 0] - ge_q[r - 0];
 		}
 		if (en != r) {
 			if (r < en + en - w - 1)
-				a[en].y = a[en].u = 0;
-		} else {
-			a[r].y = 0;
-			a[r].u = r ? go_t[r - 1] : 0;
+				a[en].y = a[en].u = -(igapo + igape);
+		}
+		else {
+			a[r].y = -go_q[0] - ge_q[0];
+			a[r].u = r ? -ge_t[r] : -go_t[r] - ge_t[r];
 		}
 
 		if (z) {
@@ -407,12 +419,14 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
 				int16_t s = psw_dot_scaled(qpj, tfi, m, scale_shift);
-				int16_t score0, ax, by, u1, q_open, t_open, z_after;
+				int16_t score0, ax, by, u1, q_open, q_ext, t_open, t_ext, z_after;
 				uint8_t d;
 
-				q_open = go_t[t];
-				t_open = go_q[j];
-				score0 = s + go_ge_t[t] + go_ge_q[j];
+				t_open = go_t[t + 1];
+				t_ext = ge_t[t + 1];
+				q_open = go_q[j + 1];
+				q_ext = ge_q[j + 1];
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				d = ax > score0 ? 1 : 0;
@@ -425,29 +439,36 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				z_after = score0 - q_open;
+				z_after = score0 - t_open;
 				ax -= z_after;
 				x1 = a[t].x;
 				d |= ax > 0 ? 0x08 : 0;
 				a[t].x = ax > 0 ? (int16_t)ax : 0;
+				a[t].x -= t_open + t_ext;
 
-				by -= score0 - t_open;
+
+				by -= score0 - q_open;
 				d |= by > 0 ? 0x10 : 0;
 				a[t].y = by > 0 ? (int16_t)by : 0;
+				a[t].y -= q_open + q_ext;
 
 				zr[t - st] = d;
 			}
-		} else {
+		}
+		else {
 			for (t = st; t <= en; ++t) {
 				int32_t j = r - t;
 				const int16_t *qpj = qp + (size_t)j * m;
 				const int16_t *tfi = tf + (size_t)t * m;
 				int16_t s = psw_dot_scaled(qpj, tfi, m, scale_shift);
-				int16_t score0, ax, by, u1, q_open, t_open, z_after;
+				int16_t score0, ax, by, u1, q_open, q_ext, t_open, t_ext, z_after;
 
-				q_open = go_t[t];
-				t_open = go_q[j];
-				score0 = s + go_ge_t[t] + go_ge_q[j];
+
+				t_open = go_t[t + 1];
+				t_ext = ge_t[t + 1];
+				q_open = go_q[j + 1];
+				q_ext = ge_q[j + 1];
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				score0 = ax > score0 ? ax : score0;
@@ -458,39 +479,44 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				z_after = score0 - q_open;
+				z_after = score0 - t_open;
 				ax -= z_after;
 				x1 = a[t].x;
 				a[t].x = ax > 0 ? (int16_t)ax : 0;
+				a[t].x -= t_open + t_ext;
 
-				by -= score0 - t_open;
+				by -= score0 - q_open;
 				a[t].y = by > 0 ? (int16_t)by : 0;
+				a[t].y -= q_open + q_ext;
+
 			}
 		}
 
 		if (r > 0) {
 			if (last_H0_t >= st && last_H0_t <= en) {
 				int32_t jh = r - last_H0_t;
-				H0 += (int32_t)a[last_H0_t].v - go_ge_q[jh];
-			} else {
-				++last_H0_t;
-				H0 += (int32_t)a[last_H0_t].u - go_ge_t[last_H0_t];
+				H0 += (int32_t)a[last_H0_t].v;
 			}
-		} else {
-			H0 = (int32_t)a[0].v - ((int32_t)go_ge_t[0] + go_ge_q[0]);
+			else {
+				++last_H0_t;
+				H0 += (int32_t)a[last_H0_t].u;
+			}
+		}
+		else {
+			H0 = (int32_t)a[0].v - (go_t[0] + ge_t[0]);
 			last_H0_t = 0;
 		}
 	}
 
 	if (z && off) {
 		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1,
-		              m_cigar_, n_cigar_, cigar_);
+									m_cigar_, n_cigar_, cigar_);
 	}
 
 	if (z) kfree(km, z);
 	if (off) kfree(km, off);
 	kfree(km, go_q); kfree(km, ge_q); kfree(km, go_t); kfree(km, ge_t);
-	kfree(km, go_ge_q); kfree(km, go_ge_t);
+	// kfree(km, go_ge_q); kfree(km, go_ge_t);
 	kfree(km, a);
 	kfree(km, qp); kfree(km, tf); kfree(km, qbf); kfree(km, tbf);
 	psw_free_norm_prof(km, &query_n); psw_free_norm_prof(km, &target_n);
@@ -498,15 +524,15 @@ float psw_gg3_pp(void *km, int qlen, const psw_prof_t *query,
 }
 
 float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
-                 int tlen, const psw_prof_t *target,
-                 int8_t m, const int8_t *mat,
-                 int8_t gapo, int8_t gape, int w,
-                 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
+								 int tlen, const psw_prof_t *target,
+								 int8_t m, const int8_t *mat,
+								 int8_t gapo, int8_t gape, int w,
+								 int *m_cigar_, int *n_cigar_, uint32_t **cigar_)
 {
 	uvxy16_t *a;
 	int16_t *tp, *tbf;
 	int16_t *go_t, *ge_t;
-	psw_prof_t target_n = {0, 0, 0, 0};
+	psw_prof_t target_n = { 0, 0, 0, 0 };
 	const psw_prof_t *t_use;
 	int32_t r, t, n_col, *off = 0;
 	int32_t H0 = 0;
@@ -515,6 +541,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 	int16_t scale;
 	int8_t scale_shift;
 	int16_t go_q, ge_q;
+	int16_t igapo, igape;
 
 	if (gapo < 0 || gape < 0) return PSW_NEG_INF_F;
 	if (query == 0 || target == 0 || mat == 0) return PSW_NEG_INF_F;
@@ -551,9 +578,9 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		return PSW_NEG_INF_F;
 	}
 
-	go_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	ge_t = (int16_t*)kmalloc(km, (size_t)tlen * sizeof(int16_t));
-	a = (uvxy16_t*)kcalloc(km, tlen + 1, sizeof(uvxy16_t));
+	go_t = (int16_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(int16_t));
+	ge_t = (int16_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(int16_t));
+	a = (uvxy16_t *)kmalloc(km, (size_t)(tlen + 1) * sizeof(uvxy16_t));
 	if (go_t == 0 || ge_t == 0 || a == 0) {
 		if (go_t) kfree(km, go_t);
 		if (ge_t) kfree(km, ge_t);
@@ -562,15 +589,23 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		psw_free_norm_prof(km, &target_n);
 		return PSW_NEG_INF_F;
 	}
+
+	igapo = psw_sat16((int32_t)gapo * scale);
+	igape = psw_sat16((int32_t)gape * scale);
 	for (t = 0; t < tlen; ++t) {
 		go_t[t] = psw_sat16((int32_t)gapo * tbf[t]);
 		ge_t[t] = psw_sat16((int32_t)gape * tbf[t]);
 	}
+	go_t[tlen] = igapo, ge_t[tlen] = igape;
+
+	for (t = 0; t <= tlen; ++t) {
+		a[t].x = a[t].v = a[t].y = a[t].u = -(igapo + igape);
+	}
 
 	if (m_cigar_ && n_cigar_ && cigar_) {
 		*n_cigar_ = 0;
-		z = (uint8_t*)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
-		off = (int32_t*)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
+		z = (uint8_t *)kcalloc(km, (size_t)(qlen + tlen) * n_col, 1);
+		off = (int32_t *)kmalloc(km, (size_t)(qlen + tlen) * sizeof(int32_t));
 		if (z == 0 || off == 0) {
 			if (z) kfree(km, z);
 			if (off) kfree(km, off);
@@ -583,7 +618,7 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 
 	if (qlen == 0 || tlen == 0) {
 		int32_t s32 = qlen == 0 ? psw_gap_only_target_i16(go_t, ge_t, tlen)
-		                       : psw_gap_only_query_scalar_i16(go_q, ge_q, qlen);
+			: psw_gap_only_query_scalar_i16(go_q, ge_q, qlen);
 		if (m_cigar_ && n_cigar_ && cigar_) {
 			*n_cigar_ = 0;
 			if (qlen == 0 && tlen > 0)
@@ -610,21 +645,23 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 		if (st > en) continue;
 
 		if (st != 0) {
-			if (r > st + st + w - 1) x1 = v1 = 0;
+			if (r > st + st + w - 1) x1 = v1 = -(igapo + igape);
 			else {
 				x1 = a[st - 1].x;
 				v1 = a[st - 1].v;
 			}
-		} else {
-			x1 = 0;
-			v1 = r ? go_q : 0;
+		}
+		else {
+			x1 = -go_t[0] -ge_t[0];
+			v1 = r ? -ge_q : -go_q - ge_q;
 		}
 		if (en != r) {
 			if (r < en + en - w - 1)
-				a[en].y = a[en].u = 0;
-		} else {
-			a[r].y = 0;
-			a[r].u = r ? go_t[r - 1] : 0;
+				a[en].y = a[en].u = -(igapo + igape);
+		}
+		else {
+			a[r].y = -go_q - ge_q;
+			a[r].u = r ? -ge_t[r] : -go_t[r] -ge_t[r];
 		}
 
 		if (z) {
@@ -634,12 +671,15 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 				int32_t j = r - t;
 				int aidx = (int)query[j];
 				int16_t s = tp[(size_t)aidx * tlen + t];
-				int16_t score0, ax, by, u1, q_open, t_open, z_after;
+				int16_t score0, ax, by, u1, q_open, q_ext, t_open, t_ext, z_after;
 				uint8_t d;
 
-				q_open = go_t[t];
-				t_open = go_q;
-				score0 = s + q_open + ge_t[t] + t_open + ge_q;
+				t_open = go_t[t + 1];
+				t_ext = ge_t[t + 1];
+				q_open = go_q;
+				q_ext = ge_q;
+
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				d = ax > score0 ? 1 : 0;
@@ -652,28 +692,34 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				z_after = score0 - q_open;
+				z_after = score0 - t_open;
 				ax -= z_after;
 				x1 = a[t].x;
 				d |= ax > 0 ? 0x08 : 0;
 				a[t].x = ax > 0 ? (int16_t)ax : 0;
+				a[t].x -= t_open + t_ext;
 
-				by -= score0 - t_open;
+				by -= score0 - q_open;
 				d |= by > 0 ? 0x10 : 0;
 				a[t].y = by > 0 ? (int16_t)by : 0;
+				a[t].y -= q_open + q_ext;
 
 				zr[t - st] = d;
 			}
-		} else {
+		}
+		else {
 			for (t = st; t <= en; ++t) {
 				int32_t j = r - t;
 				int aidx = (int)query[j];
 				int16_t s = tp[(size_t)aidx * tlen + t];
-				int16_t score0, ax, by, u1, q_open, t_open, z_after;
+				int16_t score0, ax, by, u1, q_open, q_ext, t_open, t_ext, z_after;
 
-				q_open = go_t[t];
-				t_open = go_q;
-				score0 = s + q_open + ge_t[t] + t_open + ge_q;
+				t_open = go_t[t + 1];
+				t_ext = ge_t[t + 1];
+				q_open = go_q;
+				q_ext = ge_q;
+
+				score0 = s;
 				ax = x1 + v1;
 				by = a[t].y + a[t].u;
 				score0 = ax > score0 ? ax : score0;
@@ -684,32 +730,36 @@ float psw_gg3_ps(void *km, int qlen, const uint8_t *query,
 				v1 = a[t].v;
 				a[t].v = score0 - u1;
 
-				z_after = score0 - q_open;
+				z_after = score0 - t_open;
 				ax -= z_after;
 				x1 = a[t].x;
 				a[t].x = ax > 0 ? (int16_t)ax : 0;
+				a[t].x -= t_open + t_ext;
 
-				by -= score0 - t_open;
+				by -= score0 - q_open;
 				a[t].y = by > 0 ? (int16_t)by : 0;
+				a[t].y -= q_open + q_ext;
+
 			}
 		}
 
 		if (r > 0) {
 			if (last_H0_t >= st && last_H0_t <= en)
-				H0 += (int32_t)a[last_H0_t].v - ((int32_t)go_q + ge_q);
+				H0 += a[last_H0_t].v;
 			else {
 				++last_H0_t;
-				H0 += (int32_t)a[last_H0_t].u - ((int32_t)go_t[last_H0_t] + ge_t[last_H0_t]);
+				H0 += a[last_H0_t].u;
 			}
-		} else {
-			H0 = (int32_t)a[0].v - ((int32_t)go_t[0] + ge_t[0] + go_q + ge_q);
+		}
+		else {
+			H0 = a[0].v - (go_t[0] + ge_t[0]);
 			last_H0_t = 0;
 		}
 	}
 
 	if (z && off) {
 		psw_backtrack(km, 1, 0, 0, z, off, 0, n_col, tlen - 1, qlen - 1,
-		              m_cigar_, n_cigar_, cigar_);
+									m_cigar_, n_cigar_, cigar_);
 	}
 
 	if (z) kfree(km, z);
