@@ -29,7 +29,7 @@ Usage: bash run_perf.sh [options]
 Options:
   -w, --band INT         Band width passed to psw (-w). Default: -1
   -r, --repeat INT       Repeat count per mode. Default: 1
-  -m, --modes STR        Space-separated DNA modes, e.g. "gg_pp gg_ps sw_pp sw_ps"
+  -m, --modes STR        Space-separated DNA modes, e.g. "gg_pp gg_ps"
   --protein-modes STR    Space-separated protein modes (default follows --modes)
   --dna-only             Run only DNA benchmark
   --protein-only         Run only protein benchmark

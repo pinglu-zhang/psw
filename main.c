@@ -585,7 +585,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0) {
             psw_reset_extz(&ez);
             psw_extz_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
-                        opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                        opt.gapo, opt.gape, opt.band, -1, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
@@ -593,7 +593,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0) {
             psw_reset_extz(&ez);
             psw_extz_sse_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
-                            opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                            opt.gapo, opt.gape, opt.band, -1, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
@@ -678,7 +678,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_ps") == 0) {
             psw_reset_extz(&ez);
             psw_extz_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
-                        opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                        opt.gapo, opt.gape, opt.band, -1, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
@@ -686,7 +686,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_sse_ps") == 0) {
             psw_reset_extz(&ez);
             psw_extz_sse_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
-                            opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                            opt.gapo, opt.gape, opt.band, -1, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
