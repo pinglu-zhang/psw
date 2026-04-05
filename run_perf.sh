@@ -22,6 +22,7 @@ BAND="${BAND:--1}"
 ZDROP="${ZDROP:--1}"
 RUN_DNA="${RUN_DNA:-1}"
 RUN_PROTEIN="${RUN_PROTEIN:-1}"
+SCORE_ONLY="${SCORE_ONLY:-0}"
 
 usage() {
     cat <<'EOF'
@@ -33,6 +34,7 @@ Options:
   -r, --repeat INT       Repeat count per mode. Default: 1
   -m, --modes STR        Space-separated DNA modes, e.g. "gg_pp gg_ps"
   --protein-modes STR    Space-separated protein modes (default follows --modes)
+  --score-only           Pass --score-only to psw so benchmarks skip backtracking/CIGAR
   --dna-only             Run only DNA benchmark
   --protein-only         Run only protein benchmark
   -h, --help             Show this help
@@ -61,6 +63,9 @@ while [[ $# -gt 0 ]]; do
         --protein-modes)
             [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
             PROT_MODES_STR="$2"; shift 2 ;;
+        --score-only)
+            SCORE_ONLY=1
+            shift ;;
         --dna-only)
             RUN_DNA=1
             RUN_PROTEIN=0
@@ -141,6 +146,7 @@ run_benchmark_table() {
     echo "repeats   : $REPEAT"
     echo "band      : $BAND"
     echo "zdrop     : $ZDROP"
+    echo "score_only: $SCORE_ONLY"
     echo "modes     : $modes_str"
     echo "binary    : $PSW_BIN"
     echo
@@ -155,6 +161,9 @@ run_benchmark_table() {
 
         for ((i=1; i<=REPEAT; i++)); do
             local cmd=("$PSW_BIN" -t "$mode" -w "$BAND" -z "$ZDROP")
+            if [[ "$SCORE_ONLY" -eq 1 ]]; then
+                cmd+=( --score-only )
+            fi
             if [[ "$seq_type" == "protein" ]]; then
                 cmd+=( -S protein )
             fi
