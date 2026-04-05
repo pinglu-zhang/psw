@@ -19,6 +19,7 @@ MODES_STR="${MODES:-gg_pp gg_ps gg2_pp gg2_ps gg3_pp gg3_ps gg3_sse_pp gg3_sse_p
 PROT_MODES_STR="${PROT_MODES:-$MODES_STR}"
 REPEAT="${REPEAT:-1}"
 BAND="${BAND:--1}"
+ZDROP="${ZDROP:--1}"
 RUN_DNA="${RUN_DNA:-1}"
 RUN_PROTEIN="${RUN_PROTEIN:-1}"
 
@@ -28,6 +29,7 @@ Usage: bash run_perf.sh [options]
 
 Options:
   -w, --band INT         Band width passed to psw (-w). Default: -1
+  -z, --zdrop INT        Z-drop passed to psw (-z). Default: -1
   -r, --repeat INT       Repeat count per mode. Default: 1
   -m, --modes STR        Space-separated DNA modes, e.g. "gg_pp gg_ps"
   --protein-modes STR    Space-separated protein modes (default follows --modes)
@@ -36,7 +38,7 @@ Options:
   -h, --help             Show this help
 
 Environment overrides also supported:
-  BAND, REPEAT, MODES, PROT_MODES,
+  BAND, ZDROP, REPEAT, MODES, PROT_MODES,
   TARGET_FA, QUERY_FA, PROT_TARGET_FA, PROT_QUERY_FA,
   RUN_DNA, RUN_PROTEIN.
 EOF
@@ -47,6 +49,9 @@ while [[ $# -gt 0 ]]; do
         -w|--band)
             [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
             BAND="$2"; shift 2 ;;
+        -z|--zdrop)
+            [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
+            ZDROP="$2"; shift 2 ;;
         -r|--repeat)
             [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
             REPEAT="$2"; shift 2 ;;
@@ -79,6 +84,10 @@ if [[ ! "$REPEAT" =~ ^[0-9]+$ ]] || [[ "$REPEAT" -lt 1 ]]; then
 fi
 if [[ ! "$BAND" =~ ^-?[0-9]+$ ]]; then
     echo "ERROR: BAND must be an integer" >&2
+    exit 1
+fi
+if [[ ! "$ZDROP" =~ ^-?[0-9]+$ ]]; then
+    echo "ERROR: ZDROP must be an integer" >&2
     exit 1
 fi
 if [[ ! "$RUN_DNA" =~ ^[01]$ ]] || [[ ! "$RUN_PROTEIN" =~ ^[01]$ ]]; then
@@ -131,6 +140,7 @@ run_benchmark_table() {
     echo "query     : $query_fa"
     echo "repeats   : $REPEAT"
     echo "band      : $BAND"
+    echo "zdrop     : $ZDROP"
     echo "modes     : $modes_str"
     echo "binary    : $PSW_BIN"
     echo
@@ -144,7 +154,7 @@ run_benchmark_table() {
         local i elapsed rss_kb avg_time avg_mem_mb
 
         for ((i=1; i<=REPEAT; i++)); do
-            local cmd=("$PSW_BIN" -t "$mode" -w "$BAND")
+            local cmd=("$PSW_BIN" -t "$mode" -w "$BAND" -z "$ZDROP")
             if [[ "$seq_type" == "protein" ]]; then
                 cmd+=( -S protein )
             fi
