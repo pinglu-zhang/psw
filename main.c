@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
     const char *mode; /* gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp, extz_sse_ps */
     const char *seq_type; /* dna or protein */
+    const char *matrix; /* simple or blosum62 */
     int8_t match;
     int8_t mismatch;
     int8_t gapo;
@@ -49,6 +50,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -t STR   mode: gg_pp, gg_ps, gg2_pp, gg2_ps, gg3_pp, gg3_ps, gg3_sse_pp, gg3_sse_ps, extz_pp, extz_ps, extz_sse_pp or extz_sse_ps [gg_pp]\n");
     fprintf(stderr, "  -S STR   sequence type: dna or protein [dna]\n");
+    fprintf(stderr, "  -M STR   scoring matrix: simple or blosum62; for protein only [simple]\n");
     fprintf(stderr, "  -A INT   match score [5]\n");
     fprintf(stderr, "  -B INT   mismatch penalty (positive) [4]\n");
     fprintf(stderr, "  -O INT   gap open penalty [6]\n");
@@ -146,6 +148,46 @@ static int parse_int_arg(const char *s, int *out)
     if (s == end || (end && *end != '\0')) return -1;
     *out = (int)v;
     return 0;
+}
+
+/* BLOSUM62 matrix for 20 standard amino acids (ARNDCQEGHILKMFPSTWYV) */
+static const int8_t blosum62_matrix[20*20] = {
+    4,-1,-2,-2, 0,-1,-1, 0,-2,-1,-1,-1,-1,-2,-1, 1, 0,-3,-2, 0, /* A */
+   -1, 5, 0,-2,-3, 1, 0,-2, 0,-3,-2, 2,-1,-3,-2,-1,-1,-3,-2,-3, /* R */
+   -2, 0, 6, 1,-3, 0, 0, 0, 1,-3,-3, 0,-2,-3,-2, 1, 0,-4,-2,-3, /* N */
+   -2,-2, 1, 6,-3, 0, 2,-1,-1,-3,-4,-1,-3,-3,-1, 0,-1,-4,-3,-3, /* D */
+    0,-3,-3,-3, 9,-3,-4,-3,-3,-1,-1,-3,-1,-2,-3,-1,-1,-2,-2,-1, /* C */
+   -1, 1, 0, 0,-3, 5, 2,-2, 0,-3,-2, 1, 0,-3,-1, 0,-1,-2,-1,-2, /* Q */
+   -1, 0, 0, 2,-4, 2, 5,-2, 0,-3,-3, 1,-2,-3,-1, 0,-1,-3,-2,-2, /* E */
+    0,-2, 0,-1,-3,-2,-2, 6,-2,-4,-4,-2,-3,-3,-2, 0,-2,-2,-3,-3, /* G */
+   -2, 0, 1,-1,-3, 0, 0,-2, 8,-3,-3,-1,-2,-1,-2,-1,-2,-2, 2,-3, /* H */
+   -1,-3,-3,-3,-1,-3,-3,-4,-3, 4, 2,-3, 1, 0,-3,-2,-1,-3,-1, 3, /* I */
+   -1,-2,-3,-4,-1,-2,-3,-4,-3, 2, 4,-2, 2, 0,-3,-2,-1,-2,-1, 1, /* L */
+   -1, 2, 0,-1,-3, 1, 1,-2,-1,-3,-2, 5,-1,-3,-1, 0,-1,-3,-2,-2, /* K */
+   -1,-1,-2,-3,-1, 0,-2,-3,-2, 1, 2,-1, 5, 0,-2,-1,-1,-1,-1, 1, /* M */
+   -2,-3,-3,-3,-2,-3,-3,-3,-1, 0, 0,-3, 0, 6,-4,-2,-2, 1, 3,-1, /* F */
+   -1,-2,-2,-1,-3,-1,-1,-2,-2,-3,-3,-1,-2,-4, 7,-1,-1,-4,-3,-2, /* P */
+    1,-1, 1, 0,-1, 0, 0, 0,-1,-2,-2, 0,-1,-2,-1, 4, 1,-3,-2,-2, /* S */
+    0,-1, 0,-1,-1,-1,-1,-2,-2,-1,-1,-1,-1,-2,-1, 1, 5,-2,-2, 0, /* T */
+   -3,-3,-4,-4,-2,-2,-3,-2,-2,-3,-2,-3,-1, 1,-4,-3,-2,11, 2,-3, /* W */
+   -2,-2,-2,-3,-2,-1,-2,-3, 2,-1,-1,-2,-1, 3,-3,-2,-2, 2, 7,-1, /* Y */
+    0,-3,-3,-3,-1,-2,-2,-3,-3, 3, 1,-2, 1,-1,-2,-2, 0,-3,-1, 4  /* V */
+};
+
+static void gen_blosum62_mat(int8_t *mat, int dim, int unknown_idx)
+{
+    int i, j;
+    /* First copy BLOSUM62 values for the 20 standard amino acids */
+    for (i = 0; i < 20; ++i) {
+        for (j = 0; j < 20; ++j) {
+            mat[i * dim + j] = blosum62_matrix[i * 20 + j];
+        }
+    }
+    /* Handle unknown amino acid (index 20) - set to 0 */
+    for (i = 0; i < dim; ++i) {
+        mat[unknown_idx * dim + i] = 0;
+        mat[i * dim + unknown_idx] = 0;
+    }
 }
 
 static void gen_simple_mat(int8_t *mat, int dim, int unknown_idx, int8_t match, int8_t mismatch_penalty)
@@ -448,6 +490,7 @@ static int parse_cli(int argc, char **argv, cli_opt_t *opt)
         int v;
         if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) opt->mode = argv[++i];
         else if ((strcmp(argv[i], "-S") == 0 || strcmp(argv[i], "--seq-type") == 0) && i + 1 < argc) opt->seq_type = argv[++i];
+        else if (strcmp(argv[i], "-M") == 0 && i + 1 < argc) opt->matrix = argv[++i];
         else if (strcmp(argv[i], "-A") == 0 && i + 1 < argc) {
             if (parse_int_arg(argv[++i], &v) != 0) return -1;
             opt->match = (int8_t)clamp_i8(v);
@@ -494,6 +537,7 @@ int main(int argc, char **argv)
 
     opt.mode = "gg_pp";
     opt.seq_type = "dna";
+    opt.matrix = "simple";
     opt.match = 5;
     opt.mismatch = 4;
     opt.gapo = 6;
@@ -549,7 +593,24 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    gen_simple_mat(mat, dim, alpha.unknown_idx, opt.match, opt.mismatch);
+    if (strcmp(opt.matrix, "simple") == 0 && strcmp(opt.matrix, "blosum62") != 0) {
+        gen_simple_mat(mat, dim, alpha.unknown_idx, opt.match, opt.mismatch);
+    } else if (strcmp(opt.matrix, "blosum62") == 0) {
+        if (strcmp(opt.seq_type, "protein") != 0 && strcmp(opt.seq_type, "prot") != 0) {
+            fprintf(stderr, "ERROR: blosum62 matrix only for protein sequences\n");
+            free_fasta_records(target_rec, n_target);
+            free_fasta_records(query_rec, n_query);
+            free(mat);
+            return 1;
+        }
+        gen_blosum62_mat(mat, dim, alpha.unknown_idx);
+    } else {
+        fprintf(stderr, "ERROR: matrix must be 'simple' or 'blosum62'\n");
+        free_fasta_records(target_rec, n_target);
+        free_fasta_records(query_rec, n_query);
+        free(mat);
+        return 1;
+    }
 
     if (strcmp(opt.mode, "gg_pp") == 0 || strcmp(opt.mode, "pp") == 0 ||
         strcmp(opt.mode, "gg2_pp") == 0 || strcmp(opt.mode, "gg3_pp") == 0 ||
