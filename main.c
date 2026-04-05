@@ -37,6 +37,7 @@ typedef struct {
     int8_t gapo;
     int8_t gape;
     int band;
+    int zdrop;
     int print_alignment;
     const char *target_path;
     const char *query_path;
@@ -53,6 +54,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  -O INT   gap open penalty [6]\n");
     fprintf(stderr, "  -E INT   gap extension penalty [2]\n");
     fprintf(stderr, "  -w INT   band width; -1 disables banding [-1]\n");
+    fprintf(stderr, "  -z INT   zdrop for extz modes; -1 disables zdrop [-1]\n");
     fprintf(stderr, "  -p       print alignment preview (consensus-based)\n");
 }
 
@@ -461,6 +463,9 @@ static int parse_cli(int argc, char **argv, cli_opt_t *opt)
         } else if (strcmp(argv[i], "-w") == 0 && i + 1 < argc) {
             if (parse_int_arg(argv[++i], &v) != 0) return -1;
             opt->band = v;
+        } else if (strcmp(argv[i], "-z") == 0 && i + 1 < argc) {
+            if (parse_int_arg(argv[++i], &v) != 0) return -1;
+            opt->zdrop = v;
         }
         else if (strcmp(argv[i], "-p") == 0) opt->print_alignment = 1;
         else if (argv[i][0] == '-') return -1;
@@ -494,6 +499,7 @@ int main(int argc, char **argv)
     opt.gapo = 6;
     opt.gape = 2;
     opt.band = -1;
+    opt.zdrop = -1;
     opt.print_alignment = 0;
     opt.target_path = 0;
     opt.query_path = 0;
@@ -585,7 +591,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_pp") == 0 || strcmp(opt.mode, "extz") == 0) {
             psw_reset_extz(&ez);
             psw_extz_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
-                        opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                        opt.gapo, opt.gape, opt.band, opt.zdrop, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
@@ -593,7 +599,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_sse_pp") == 0 || strcmp(opt.mode, "extz_sse") == 0) {
             psw_reset_extz(&ez);
             psw_extz_sse_pp(0, qlen, &query, tlen, &target, (int8_t)dim, mat,
-                            opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                            opt.gapo, opt.gape, opt.band, opt.zdrop, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
@@ -678,7 +684,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_ps") == 0) {
             psw_reset_extz(&ez);
             psw_extz_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
-                        opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                        opt.gapo, opt.gape, opt.band, opt.zdrop, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
@@ -686,7 +692,7 @@ int main(int argc, char **argv)
         } else if (strcmp(opt.mode, "extz_sse_ps") == 0) {
             psw_reset_extz(&ez);
             psw_extz_sse_ps(0, qlen, query_idx, tlen, &target, (int8_t)dim, mat,
-                            opt.gapo, opt.gape, opt.band, 100, PSW_FLAG_GLOBAL, &ez);
+                            opt.gapo, opt.gape, opt.band, opt.zdrop, PSW_FLAG_GLOBAL, &ez);
             score = (float)ez.score;
             m_cigar = ez.m_cigar;
             n_cigar = ez.n_cigar;
